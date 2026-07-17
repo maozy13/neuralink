@@ -37,18 +37,107 @@ HasMore -- 否 --> End
 
 以下处理算子根据 SourceEvent 的 `type` 属性来进行分类。
 
-`responses.created`
+- `responses.created`
 
-映射到 ResponseCreated 类型。
+SourceEvent 示例：
 
-`response.output_item.added`
+```json
+{
+  "type": "response.created",
+  "response": {
+    "id": "resp_67ccfcdd16748190a91872c75d38539e09e4d4aac714747c",
+    "created_at": 1741487325,
+    "status": "in_progress",
+  },
+  "sequence_number": 1
+}
+```
 
-映射到 ResponseOutputItemAdded 类型。
+映射方式：映射到 ResponseCreated 类型。
 
-`response.content_part.added`
+- `response.output_item.added`
 
-映射到 ResponseContentPartAdded 类型。
+SourceEvent 示例：
 
-`response.output_text.delta`
+```json
+{
+  "type": "response.output_item.added",
+  "output_index": 0,
+  "item": {
+    "id": "rs_6806bfca0b2481918a5748308061a2600d3ce51bdffd5476",
+    "status": "in_progress",
+    "type": "message",
+    "role": "assistant",
+    "content": []
+  },
+  "sequence_number": 1
+}
+```
 
-映射到 ResponseOutputTextDelta 类型。
+映射方式：映射到 ResponseOutputItemAdded 类型。
+
+- `response.content_part.added`
+
+SourceEvent 示例：
+
+```json
+{
+  "type": "response.content_part.added",
+  "item_id": "rs_6806bfca0b2481918a5748308061a2600d3ce51bdffd5476",
+  "part": {
+    "type": "output_text",
+    "text": ""
+  },
+  "sequence_number": 1
+}
+```
+
+映射方式：映射到 ResponseContentPartAdded 类型。
+
+- `response.output_text.delta`
+
+SourceEvent 示例：
+
+```json
+{
+  "type": "response.output_text.delta",
+  "item_id": "rs_6806bfca0b2481918a5748308061a2600d3ce51bdffd5476",
+  "delta": "好的",
+  "sequence_number": 1
+}
+```
+
+映射方式：映射到 ResponseOutputTextDelta 类型。
+
+- `response.reasoning_summary_part.added`
+
+SourceEvent 示例：
+
+```json
+{
+  "type": "response.reasoning_summary_part.added",
+  "item_id": "rs_6806bfca0b2481918a5748308061a2600d3ce51bdffd5476",
+  "part": {
+    "type": "summary_text",
+    "text": ""
+  },
+  "sequence_number": 1
+}
+```
+
+映射方式：映射到 ResponseReasoningSummaryPartAdded 类型。
+
+- `response.reasoning_summary_text.delta`
+
+SourceEvent 示例：
+
+```json
+{
+  "type": "response.reasoning_summary_text.delta",
+  "item_id": "rs_6806bfca0b2481918a5748308061a2600d3ce51bdffd5476",
+  "delta": "用户",
+  "sequence_number": 1
+}
+```
+
+映射方式：映射到 ResponseReasoningSummaryTextDelta 类型。

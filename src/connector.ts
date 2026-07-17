@@ -15,6 +15,7 @@ const responseEventHandlers = {
   "response.created": (event) => ({
     id: event.response.id,
     created_at: event.response.created_at,
+    status: event.response.status,
     output: [],
   }),
   "response.output_item.added": (event, result) => {
@@ -53,6 +54,38 @@ const responseEventHandlers = {
       throw new Error(`Model API emitted an output-text delta for refusal output item ${event.item_id}`);
     }
     item.content.text += event.delta;
+    return result;
+  },
+  "response.reasoning_summary_part.added": (event, result) => {
+    if (result === undefined) {
+      throw new Error("Model API emitted a reasoning-summary part before response.created");
+    }
+    const item = result.output.find((outputItem) => outputItem.id === event.item_id);
+    if (item === undefined) {
+      throw new Error(`Model API emitted a reasoning-summary part for unknown output item ${event.item_id}`);
+    }
+    if (item.type !== "reasoning") {
+      throw new Error(`Model API emitted a reasoning-summary part for non-reasoning output item ${event.item_id}`);
+    }
+    item.summary.push(event.part);
+    return result;
+  },
+  "response.reasoning_summary_text.delta": (event, result) => {
+    if (result === undefined) {
+      throw new Error("Model API emitted a reasoning-summary delta before response.created");
+    }
+    const item = result.output.find((outputItem) => outputItem.id === event.item_id);
+    if (item === undefined) {
+      throw new Error(`Model API emitted a reasoning-summary delta for unknown output item ${event.item_id}`);
+    }
+    if (item.type !== "reasoning") {
+      throw new Error(`Model API emitted a reasoning-summary delta for non-reasoning output item ${event.item_id}`);
+    }
+    const summary = item.summary.at(-1);
+    if (summary === undefined) {
+      throw new Error(`Model API emitted a reasoning-summary delta before a summary part for output item ${event.item_id}`);
+    }
+    summary.text += event.delta;
     return result;
   },
 } satisfies ResponseEventHandlerMap;

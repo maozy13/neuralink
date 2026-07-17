@@ -14,11 +14,11 @@ describe("ResponsesAPIConverter", () => {
     expect(converter.fromEvent({
       type: "response.created",
       sequence_number: 3,
-      response: { id: "resp_1", created_at: 123, error: null, ignored: true },
+      response: { id: "resp_1", created_at: 123, status: "in_progress", ignored: true },
     })).toEqual({
       type: "response.created",
       sequence_number: 3,
-      response: { id: "resp_1", created_at: 123, error: null },
+      response: { id: "resp_1", created_at: 123, status: "in_progress", error: null },
     });
   });
 
@@ -33,6 +33,34 @@ describe("ResponsesAPIConverter", () => {
       type: "response.output_item.added",
       sequence_number: 4,
       item,
+    });
+  });
+
+  it("initializes missing fields on an incremental reasoning item", () => {
+    expect(converter.fromEvent({
+      type: "response.output_item.added",
+      sequence_number: 4,
+      item: { id: "reasoning_1", type: "reasoning", status: "in_progress" },
+    })).toEqual({
+      type: "response.output_item.added",
+      sequence_number: 4,
+      item: { id: "reasoning_1", type: "reasoning", content: [], summary: [] },
+    });
+  });
+
+  it.each([
+    [[], { type: "output_text", text: "" }],
+    [[{ type: "output_text", text: "Hello" }], { type: "output_text", text: "Hello" }],
+    [[{ type: "refusal", refusal: "No" }], { type: "refusal", refusal: "No" }],
+  ] as const)("normalizes incremental message content %#", (content, expectedContent) => {
+    expect(converter.fromEvent({
+      type: "response.output_item.added",
+      sequence_number: 4,
+      item: { id: "msg_1", type: "message", role: "assistant", status: "in_progress", content: [...content] },
+    })).toEqual({
+      type: "response.output_item.added",
+      sequence_number: 4,
+      item: { id: "msg_1", type: "message", role: "assistant", content: expectedContent },
     });
   });
 
@@ -78,6 +106,50 @@ describe("ResponsesAPIConverter", () => {
       sequence_number: 7,
       item_id: "msg_1",
       delta: " world",
+    });
+  });
+
+  it("normalizes response.reasoning_summary_part.added", () => {
+    expect(converter.fromEvent({
+      type: "response.reasoning_summary_part.added",
+      sequence_number: 8,
+      item_id: "rs_1",
+      summary_index: 0,
+      part: { type: "summary_text", text: "" },
+    })).toEqual({
+      type: "response.reasoning_summary_part.added",
+      sequence_number: 8,
+      item_id: "rs_1",
+      part: { type: "summary_text", text: "" },
+    });
+  });
+
+  it("initializes missing reasoning summary text", () => {
+    expect(converter.fromEvent({
+      type: "response.reasoning_summary_part.added",
+      sequence_number: 8,
+      item_id: "rs_1",
+      part: { type: "summary_text" },
+    })).toEqual({
+      type: "response.reasoning_summary_part.added",
+      sequence_number: 8,
+      item_id: "rs_1",
+      part: { type: "summary_text", text: "" },
+    });
+  });
+
+  it("normalizes response.reasoning_summary_text.delta", () => {
+    expect(converter.fromEvent({
+      type: "response.reasoning_summary_text.delta",
+      sequence_number: 9,
+      item_id: "rs_1",
+      summary_index: 0,
+      delta: "Thinking",
+    })).toEqual({
+      type: "response.reasoning_summary_text.delta",
+      sequence_number: 9,
+      item_id: "rs_1",
+      delta: "Thinking",
     });
   });
 

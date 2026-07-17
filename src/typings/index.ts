@@ -22,8 +22,10 @@ export interface Optional { instructions?: string }
 export interface NormalizedParams extends Optional { model: string; input: string | InputItem[] }
 /** Provider-neutral response error information. */
 export interface ResponseError { code: string; message: string }
+/** Lifecycle status of a model response. */
+export type ResponseStatus = "completed" | "failed" | "in_progress" | "cancelled" | "queued" | "incomplete";
 /** Metadata shared by response lifecycle events. */
-export interface ResponseMetadata { id: string; created_at: number; error: ResponseError | null }
+export interface ResponseMetadata { id: string; created_at: number; status: ResponseStatus; error: ResponseError | null }
 /** Event emitted when a response stream is created. */
 export interface ResponseCreated {
   type: "response.created";
@@ -74,16 +76,33 @@ export interface ResponseOutputTextDelta {
   item_id: string;
   delta: string;
 }
+/** Event emitted when a summary part is added to a reasoning output item. */
+export interface ResponseReasoningSummaryPartAdded {
+  type: "response.reasoning_summary_part.added";
+  sequence_number: number;
+  item_id: string;
+  part: SummaryText;
+}
+/** Event emitted for an incremental reasoning-summary text update. */
+export interface ResponseReasoningSummaryTextDelta {
+  type: "response.reasoning_summary_text.delta";
+  sequence_number: number;
+  item_id: string;
+  delta: string;
+}
 /** Events supported by the current implementation. */
 export type ResponseEvent =
   | ResponseCreated
   | ResponseOutputItemAdded
   | ResponseContentPartAdded
-  | ResponseOutputTextDelta;
+  | ResponseOutputTextDelta
+  | ResponseReasoningSummaryPartAdded
+  | ResponseReasoningSummaryTextDelta;
 /** Accumulated result returned when a response stream ends. */
 export interface ResponseResult {
   id: string;
   created_at: number;
+  status: ResponseStatus;
   output: ResponseOutputItem[];
 }
 /** Converts between provider-specific and NeuralLink representations. */

@@ -6,8 +6,13 @@ export type {
   ResponsesAPIContentPartAddedEvent,
   ResponsesAPIMetadata,
   ResponsesAPIOutputItemAddedEvent,
+  ResponsesAPIOutputItem,
+  ResponsesAPIOutputMessage,
   ResponsesAPIOutputTextDeltaEvent,
   ResponsesAPIRequest,
+  ResponsesAPIReasoningSummaryPartAddedEvent,
+  ResponsesAPIReasoningSummaryTextDeltaEvent,
+  ResponsesAPIReasoning,
   ResponsesAPISourceEvent,
   ResponsesAPIUnknownEvent,
 } from "./converters/responses-api-converter.js";

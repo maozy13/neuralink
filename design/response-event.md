@@ -16,6 +16,8 @@ ResponseEvent 可以是下列结构中的一种：
 - ResponseContentPartDone
 - ResponseOutputTextDelta
 - ResponseOutputTextDone
+- ResponseReasoningSummaryPartAdded
+- ResponseReasoningSummaryTextDelta
 
 `ResponseCreated`
 
@@ -140,6 +142,32 @@ ResponseEvent 可以是下列结构中的一种：
 | sequence_number | number | 事件的顺序号 |
 | item_id | string | 目标对象的 ID |
 | text | string | 完整的文本内容 |
+
+`ResponseReasoningSummaryPartAdded`
+
+向某个对象中新增部分属性。
+
+**属性：**
+
+| 属性 | 类型 | 说明 |
+| -- | -- | -- |
+| type | "response.reasoning_summary_part.added" | 事件类型，固定为 "response.reasoning_summary_part.added" |
+| sequence_number | number | 事件的顺序号 |
+| item_id | string | 目标对象的 ID |
+| part | TextContent \| RefusalContent | 对象的内容 |
+
+`ResponseReasoningSummaryTextDelta`
+
+文本增量输出。
+
+**属性：**
+
+| 属性 | 类型 | 说明 |
+| -- | -- | -- |
+| type | "response.reasoning_summary_text.delta" | 事件类型，固定为 "response.reasoning_summary_text.delta" |
+| sequence_number | number | 事件的顺序号 |
+| item_id | string | 目标对象的 ID |
+| delta | string | 增量的推理摘要文本内容 |
 
 `ResponseMetadata`
 

@@ -200,6 +200,46 @@ describe("Connector", () => {
     await expect(Array.fromAsync(connector.call("model", "input"))).rejects.toThrow(error);
   });
 
+  it("adds and updates reasoning summary text", async () => {
+    const events = [
+      { type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, status: "in_progress" } },
+      { type: "response.output_item.added", sequence_number: 1, item: { id: "rs_1", type: "reasoning", status: "in_progress" } },
+      { type: "response.reasoning_summary_part.added", sequence_number: 2, item_id: "rs_1", part: { type: "summary_text", text: "" } },
+      { type: "response.reasoning_summary_text.delta", sequence_number: 3, item_id: "rs_1", delta: "Thinking" },
+      { type: "response.reasoning_summary_text.delta", sequence_number: 4, item_id: "rs_1", delta: " done" },
+    ];
+    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
+      fetch: vi.fn().mockResolvedValue(sseResponse(events.map((event) => `data: ${JSON.stringify(event)}\n\n`))),
+    });
+    const iterator = connector.call("model", "input");
+
+    for (let index = 0; index < events.length; index += 1) await iterator.next();
+    expect(await iterator.next()).toEqual({
+      done: true,
+      value: {
+        id: "r",
+        created_at: 1,
+        status: "in_progress",
+        output: [{ id: "rs_1", type: "reasoning", content: [], summary: [{ type: "summary_text", text: "Thinking done" }] }],
+      },
+    });
+  });
+
+  it.each([
+    ["part before response.created", [{ type: "response.reasoning_summary_part.added", sequence_number: 0, item_id: "rs_1", part: { type: "summary_text", text: "" } }], "before response.created"],
+    ["part for an unknown item", [{ type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } }, { type: "response.reasoning_summary_part.added", sequence_number: 1, item_id: "missing", part: { type: "summary_text", text: "" } }], "unknown output item missing"],
+    ["part for a message", [{ type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } }, { type: "response.output_item.added", sequence_number: 1, item: { id: "msg_1", type: "message", role: "assistant", content: { type: "output_text", text: "" } } }, { type: "response.reasoning_summary_part.added", sequence_number: 2, item_id: "msg_1", part: { type: "summary_text", text: "" } }], "non-reasoning output item msg_1"],
+    ["delta before response.created", [{ type: "response.reasoning_summary_text.delta", sequence_number: 0, item_id: "rs_1", delta: "x" }], "before response.created"],
+    ["delta for an unknown item", [{ type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } }, { type: "response.reasoning_summary_text.delta", sequence_number: 1, item_id: "missing", delta: "x" }], "unknown output item missing"],
+    ["delta for a message", [{ type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } }, { type: "response.output_item.added", sequence_number: 1, item: { id: "msg_1", type: "message", role: "assistant", content: { type: "output_text", text: "" } } }, { type: "response.reasoning_summary_text.delta", sequence_number: 2, item_id: "msg_1", delta: "x" }], "non-reasoning output item msg_1"],
+    ["delta before a summary part", [{ type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } }, { type: "response.output_item.added", sequence_number: 1, item: { id: "rs_1", type: "reasoning", content: [], summary: [] } }, { type: "response.reasoning_summary_text.delta", sequence_number: 2, item_id: "rs_1", delta: "x" }], "before a summary part"],
+  ])("rejects a reasoning-summary %s", async (_name, events, error) => {
+    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
+      fetch: vi.fn().mockResolvedValue(sseResponse(events.map((event) => `data: ${JSON.stringify(event)}\n\n`))),
+    });
+    await expect(Array.fromAsync(connector.call("model", "input"))).rejects.toThrow(error);
+  });
+
   it("joins multiline data fields and uses default options", async () => {
     const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
       fetch: vi.fn().mockResolvedValue(sseResponse([
