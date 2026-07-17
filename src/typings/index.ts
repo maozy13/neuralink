@@ -38,7 +38,7 @@ export interface TextContent { type: "output_text"; text: string }
 export interface RefusalContent { type: "refusal"; refusal: string }
 /** An assistant message emitted as a response output item. */
 export interface OutputMessage {
-  id: string;
+  id?: string;
   type: "message";
   role: "assistant";
   content: TextContent | RefusalContent;
@@ -49,7 +49,7 @@ export interface ReasoningText { type: "reasoning_text"; text: string }
 export interface SummaryText { type: "summary_text"; text: string }
 /** A reasoning response output item. */
 export interface Reasoning {
-  id: string;
+  id?: string;
   type: "reasoning";
   content: ReasoningText[];
   summary: SummaryText[];
@@ -66,28 +66,28 @@ export interface ResponseOutputItemAdded {
 export interface ResponseContentPartAdded {
   type: "response.content_part.added";
   sequence_number: number;
-  item_id: string;
+  item_id?: string;
   part: TextContent | RefusalContent;
 }
 /** Event emitted for an incremental output-text update. */
 export interface ResponseOutputTextDelta {
   type: "response.output_text.delta";
   sequence_number: number;
-  item_id: string;
+  item_id?: string;
   delta: string;
 }
 /** Event emitted when a summary part is added to a reasoning output item. */
 export interface ResponseReasoningSummaryPartAdded {
   type: "response.reasoning_summary_part.added";
   sequence_number: number;
-  item_id: string;
+  item_id?: string;
   part: SummaryText;
 }
 /** Event emitted for an incremental reasoning-summary text update. */
 export interface ResponseReasoningSummaryTextDelta {
   type: "response.reasoning_summary_text.delta";
   sequence_number: number;
-  item_id: string;
+  item_id?: string;
   delta: string;
 }
 /** Events supported by the current implementation. */
@@ -116,7 +116,8 @@ export interface Converter<RequestParams, SourceEvent> {
   /**
    * Converts a provider event into a provider-neutral event.
    * @param event Provider-specific event data.
-   * @returns The normalized response event, or undefined when unsupported.
+   * @param result The response result accumulated before this event.
+   * @returns One or more normalized response events, or undefined when unsupported.
    */
-  fromEvent(event: SourceEvent): ResponseEvent | undefined;
+  fromEvent(event: SourceEvent, result: ResponseResult | undefined): ResponseEvent | ResponseEvent[] | undefined;
 }

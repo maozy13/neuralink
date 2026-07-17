@@ -5,6 +5,6 @@
     "outDir": "../dist/demo",
     "rootDir": "."
   },
-  "include": ["demo.ts"],
+  "include": ["*.ts"],
   "exclude": []
 }

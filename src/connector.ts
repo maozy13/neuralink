@@ -29,7 +29,8 @@ const responseEventHandlers = {
     if (result === undefined) {
       throw new Error("Model API emitted a content part before response.created");
     }
-    const item = result.output.find((outputItem) => outputItem.id === event.item_id);
+    const item = result.output.find((outputItem) => outputItem.type === "message")
+      ?? result.output[0];
     if (item === undefined) {
       throw new Error(`Model API emitted content for unknown output item ${event.item_id}`);
     }
@@ -43,7 +44,8 @@ const responseEventHandlers = {
     if (result === undefined) {
       throw new Error("Model API emitted an output-text delta before response.created");
     }
-    const item = result.output.find((outputItem) => outputItem.id === event.item_id);
+    const item = result.output.find((outputItem) => outputItem.type === "message")
+      ?? result.output[0];
     if (item === undefined) {
       throw new Error(`Model API emitted an output-text delta for unknown output item ${event.item_id}`);
     }
@@ -60,7 +62,8 @@ const responseEventHandlers = {
     if (result === undefined) {
       throw new Error("Model API emitted a reasoning-summary part before response.created");
     }
-    const item = result.output.find((outputItem) => outputItem.id === event.item_id);
+    const item = result.output.find((outputItem) => outputItem.type === "reasoning")
+      ?? result.output[0];
     if (item === undefined) {
       throw new Error(`Model API emitted a reasoning-summary part for unknown output item ${event.item_id}`);
     }
@@ -74,7 +77,8 @@ const responseEventHandlers = {
     if (result === undefined) {
       throw new Error("Model API emitted a reasoning-summary delta before response.created");
     }
-    const item = result.output.find((outputItem) => outputItem.id === event.item_id);
+    const item = result.output.find((outputItem) => outputItem.type === "reasoning")
+      ?? result.output[0];
     if (item === undefined) {
       throw new Error(`Model API emitted a reasoning-summary delta for unknown output item ${event.item_id}`);
     }
@@ -145,10 +149,13 @@ export class Connector<RequestParams, SourceEvent> {
     let result: ResponseResult | undefined;
     for await (const data of parseServerSentEvents(response.body)) {
       if (data === "[DONE]") continue;
-      const event = this.converter.fromEvent(JSON.parse(data) as SourceEvent);
-      if (event === undefined) continue;
-      result = updateResponseResult(event, result);
-      yield event;
+      const converted = this.converter.fromEvent(JSON.parse(data) as SourceEvent, result);
+      if (converted === undefined) continue;
+      const events = Array.isArray(converted) ? converted : [converted];
+      for (const event of events) {
+        result = updateResponseResult(event, result);
+        yield event;
+      }
     }
     if (result === undefined) throw new Error("Model API response did not include a supported event");
     return result;

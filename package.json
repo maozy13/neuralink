@@ -13,6 +13,7 @@
   "scripts": {
     "build": "tsc",
     "demo": "pnpm build && tsc -p demo/tsconfig.json && node dist/demo/demo.js",
+    "demo:chat": "pnpm build && tsc -p demo/tsconfig.json && node dist/demo/chat-completions-demo.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage"
   },

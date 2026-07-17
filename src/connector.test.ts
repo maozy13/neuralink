@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Connector, ResponsesAPIConverter } from "./index.js";
+import { ChatCompletionsConverter, Connector, ResponsesAPIConverter } from "./index.js";
 
 /**
  * Creates an SSE response from text chunks.
@@ -17,6 +17,31 @@ function sseResponse(chunks: string[]): Response {
 }
 
 describe("Connector", () => {
+  it("processes every normalized event returned for one source event", async () => {
+    const source = {
+      id: "chat_1",
+      created: 123,
+      choices: [{ index: 0, delta: { role: "assistant", content: "Hello" } }],
+    };
+    const connector = new Connector("url", "key", new ChatCompletionsConverter(), {
+      fetch: vi.fn().mockResolvedValue(sseResponse([`data: ${JSON.stringify(source)}\n\n`])),
+    });
+    const iterator = connector.call("model", "input");
+
+    expect((await iterator.next()).value).toMatchObject({ type: "response.created" });
+    expect((await iterator.next()).value).toMatchObject({ type: "response.output_item.added" });
+    expect((await iterator.next()).value).toMatchObject({ type: "response.content_part.added" });
+    expect(await iterator.next()).toEqual({
+      done: true,
+      value: {
+        id: "chat_1",
+        created_at: 123,
+        status: "in_progress",
+        output: [{ type: "message", role: "assistant", content: { type: "output_text", text: "Hello" } }],
+      },
+    });
+  });
+
   it("uses the global fetch implementation by default", async () => {
     const fetchMock = vi.fn().mockResolvedValue(sseResponse([
       'data: {"type":"response.created","sequence_number":0,"response":{"id":"r","created_at":1,"error":null}}\n\n',
