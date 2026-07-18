@@ -121,3 +121,44 @@ SourceEvent 示例：
 ```
 
 映射到 ResponseReasoningSummaryTextDelta 事件。
+
+
+### `response.completed`
+
+SourceEvent 示例：
+
+```json
+{
+  "type": "response.completed",
+  "response": {
+    "id": "resp_67ccfcdd16748190a91872c75d38539e09e4d4aac714747c",
+    "object": "response",
+    "created_at": 1740855869,
+    "status": "completed",
+    "completed_at": 1740855870,
+    "error": null,
+    "incomplete_details": null,
+    "input": [],
+    "instructions": null,
+    "max_output_tokens": null,
+    "model": "gpt-4o-mini-2024-07-18",
+    "output": [
+      {
+        "id": "msg_123",
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "In a shimmering forest under a sky full of stars, a lonely unicorn named Lila discovered a hidden pond that glowed with moonlight. Every night, she would leave sparkling, magical flowers by the water's edge, hoping to share her beauty with others. One enchanting evening, she woke to find a group of friendly animals gathered around, eager to be friends and share in her magic.",
+            "annotations": []
+          }
+        ]
+      }
+    ]
+  },
+  "sequence_number": 1
+}
+```
+
+映射到 ResponseCompleted 事件。
