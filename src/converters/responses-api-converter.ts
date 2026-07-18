@@ -1,112 +1,57 @@
 import type {
   Converter,
   NormalizedParams,
-  RefusalContent,
-  ResponseContentPartAdded,
-  ResponseCreated,
-  ResponseError,
+  Response,
   ResponseEvent,
-  ResponseOutputItem,
-  ResponseOutputItemAdded,
-  ResponseOutputTextDelta,
-  ResponseReasoningSummaryPartAdded,
-  ResponseReasoningSummaryTextDelta,
   ResponseStatus,
-  Reasoning,
-  SummaryText,
-  TextContent,
-  OutputMessage,
 } from "../typings/index.js";
 
 /** Request body accepted by a Responses API-compatible endpoint. */
 export interface ResponsesAPIRequest extends NormalizedParams { stream: true }
-/** Minimal Responses API response metadata. */
-export interface ResponsesAPIMetadata {
+/** Minimal response object used while normalizing lifecycle events. */
+interface ResponsesAPIResponse {
   id: string;
   created_at: number;
-  status: ResponseStatus;
-  error?: ResponseError | null;
+  status?: ResponseStatus;
+  output?: Response["output"];
   [key: string]: unknown;
 }
-/** Minimal source event emitted when a response is created. */
-export interface ResponsesAPICreatedEvent {
-  type: "response.created";
-  sequence_number: number;
-  response: ResponsesAPIMetadata;
-}
-/** Minimal source event emitted when a response output item is added. */
-export interface ResponsesAPIOutputItemAddedEvent {
-  type: "response.output_item.added";
-  sequence_number: number;
-  item: ResponsesAPIOutputItem;
-  [key: string]: unknown;
-}
-/** Incremental assistant message returned by a Responses API-compatible endpoint. */
-export interface ResponsesAPIOutputMessage {
-  id: string;
-  type: "message";
-  role: "assistant";
-  content: Array<TextContent | RefusalContent>;
-  [key: string]: unknown;
-}
-/** Incremental reasoning item returned by a Responses API-compatible endpoint. */
-export interface ResponsesAPIReasoning {
-  id: string;
-  type: "reasoning";
-  content?: Reasoning["content"];
-  summary?: Reasoning["summary"];
-  [key: string]: unknown;
-}
-/** Output item returned by a Responses API-compatible endpoint. */
-export type ResponsesAPIOutputItem = ResponsesAPIOutputMessage | ResponsesAPIReasoning;
-/** Minimal source event emitted when content is added to an output item. */
-export interface ResponsesAPIContentPartAddedEvent {
-  type: "response.content_part.added";
-  sequence_number: number;
-  item_id: string;
-  part: TextContent | RefusalContent;
-  [key: string]: unknown;
-}
-/** Minimal source event emitted for an incremental output-text update. */
-export interface ResponsesAPIOutputTextDeltaEvent {
-  type: "response.output_text.delta";
-  sequence_number: number;
-  item_id: string;
-  delta: string;
-  [key: string]: unknown;
-}
-/** Minimal source event emitted when a reasoning summary part is added. */
-export interface ResponsesAPIReasoningSummaryPartAddedEvent {
-  type: "response.reasoning_summary_part.added";
-  sequence_number: number;
-  item_id: string;
-  part: Omit<SummaryText, "text"> & { text?: string };
-  [key: string]: unknown;
-}
-/** Minimal source event emitted for an incremental reasoning-summary update. */
-export interface ResponsesAPIReasoningSummaryTextDeltaEvent {
-  type: "response.reasoning_summary_text.delta";
-  sequence_number: number;
-  item_id: string;
-  delta: string;
-  [key: string]: unknown;
-}
-/** A Responses API event not handled by the minimal converter. */
-export interface ResponsesAPIUnknownEvent {
-  type: string;
+/** A Responses API lifecycle event carrying a response object. */
+interface ResponsesAPILifecycleEvent extends ResponsesAPIEvent {
+  type: "response.created" | "response.completed" | "response.failed" | "response.incomplete";
   sequence_number?: number;
+  response: ResponsesAPIResponse;
+}
+/** A newly added Responses API output item. */
+interface ResponsesAPIOutputItemAddedEvent extends ResponsesAPIEvent {
+  type: "response.output_item.added";
+  item: { type: "message" | "reasoning"; [key: string]: unknown };
   [key: string]: unknown;
 }
-/** Source events supported by the minimal Responses API converter. */
-export type ResponsesAPISourceEvent =
-  | ResponsesAPICreatedEvent
-  | ResponsesAPIOutputItemAddedEvent
-  | ResponsesAPIContentPartAddedEvent
-  | ResponsesAPIOutputTextDeltaEvent
-  | ResponsesAPIReasoningSummaryPartAddedEvent
-  | ResponsesAPIReasoningSummaryTextDeltaEvent
-  | ResponsesAPIUnknownEvent;
-/** Converts requests and supported streaming events for Responses API. */
+/** A newly added Responses API message content part. */
+interface ResponsesAPIContentPartAddedEvent extends ResponsesAPIEvent {
+  type: "response.content_part.added";
+  part: { type: "output_text" | "output_refusal" | "refusal"; [key: string]: unknown };
+  [key: string]: unknown;
+}
+/** An incremental Responses API output-text event. */
+interface ResponsesAPIOutputTextDeltaEvent extends ResponsesAPIEvent {
+  type: "response.output_text.delta";
+  delta: string;
+  [key: string]: unknown;
+}
+/** An incremental Responses API reasoning-summary event. */
+interface ResponsesAPIReasoningSummaryTextDeltaEvent extends ResponsesAPIEvent {
+  type: "response.reasoning_summary_text.delta";
+  delta: string;
+  [key: string]: unknown;
+}
+/** A JSON event emitted by a Responses API-compatible endpoint. */
+interface ResponsesAPIEvent { type: string; [key: string]: unknown }
+/** Every source value accepted by ResponsesAPIConverter. */
+export type ResponsesAPISourceEvent = ResponsesAPIEvent | "[DONE]";
+
+/** Converts requests and streaming events for Responses API-compatible endpoints. */
 export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, ResponsesAPISourceEvent> {
   /**
    * Converts model parameters to a streaming Responses API request.
@@ -116,134 +61,72 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
   public toAPI(params: NormalizedParams): ResponsesAPIRequest {
     return { ...params, stream: true };
   }
+
   /**
-   * Normalizes a Responses API response.created event.
-   * @param event The provider event to normalize.
-   * @returns A normalized event, or undefined when the event is unsupported.
+   * Converts a Responses API source event to the new normalized ResponseEvent model.
+   * @param event Provider-specific streaming event.
+   * @returns A normalized event, or undefined when the source event is unsupported.
    */
   public fromEvent(event: ResponsesAPISourceEvent): ResponseEvent | undefined {
-    if (event.type === "response.reasoning_summary_text.delta") {
-      return this.fromReasoningSummaryTextDelta(event as ResponsesAPIReasoningSummaryTextDeltaEvent);
+    if (event === "[DONE]") return undefined;
+    switch (event.type) {
+      case "response.created":
+      case "response.completed":
+      case "response.failed":
+      case "response.incomplete":
+        return this.fromLifecycleEvent(event as ResponsesAPILifecycleEvent);
+      case "response.output_item.added":
+        return (event as ResponsesAPIOutputItemAddedEvent).item.type === "message"
+          ? { type: "response.message_text.delta", delta: "" }
+          : { type: "response.reasoning_summary_text.delta", delta: "" };
+      case "response.content_part.added": {
+        const partType = (event as ResponsesAPIContentPartAddedEvent).part.type;
+        return partType === "output_text"
+          ? { type: "response.message_text.delta", delta: "" }
+          : { type: "response.message_refusal.delta", delta: "" };
+      }
+      case "response.output_text.delta":
+        return { type: "response.message_text.delta", delta: (event as ResponsesAPIOutputTextDeltaEvent).delta };
+      case "response.reasoning_summary_part.added":
+        return { type: "response.reasoning_summary_text.delta", delta: "" };
+      case "response.reasoning_summary_text.delta":
+        return {
+          type: "response.reasoning_summary_text.delta",
+          delta: (event as ResponsesAPIReasoningSummaryTextDeltaEvent).delta,
+        };
+      default:
+        console.log(event);
+        return undefined;
     }
-    if (event.type === "response.reasoning_summary_part.added") {
-      return this.fromReasoningSummaryPartAdded(event as ResponsesAPIReasoningSummaryPartAddedEvent);
-    }
-    if (event.type === "response.output_text.delta") {
-      return this.fromOutputTextDelta(event as ResponsesAPIOutputTextDeltaEvent);
-    }
-    if (event.type === "response.content_part.added") {
-      return this.fromContentPartAdded(event as ResponsesAPIContentPartAddedEvent);
-    }
-    if (event.type === "response.output_item.added") {
-      return this.fromOutputItemAdded(event as ResponsesAPIOutputItemAddedEvent);
-    }
-    if (event.type === "response.created") {
-      const createdEvent = event as ResponsesAPICreatedEvent;
-      const { id, created_at, status, error = null } = createdEvent.response;
-      return {
-        type: "response.created",
-        sequence_number: createdEvent.sequence_number,
-        response: { id, created_at, status, error },
-      };
-    }
-    return undefined;
   }
 
   /**
-   * Normalizes a Responses API response.reasoning_summary_part.added event.
-   * @param event The provider reasoning-summary part event to normalize.
-   * @returns A provider-neutral response.reasoning_summary_part.added event.
+   * Converts a Responses API lifecycle event.
+   * @param event Provider lifecycle event.
+   * @returns The corresponding normalized lifecycle event.
    */
-  private fromReasoningSummaryPartAdded(
-    event: ResponsesAPIReasoningSummaryPartAddedEvent,
-  ): ResponseReasoningSummaryPartAdded {
-    return {
-      type: "response.reasoning_summary_part.added",
-      sequence_number: event.sequence_number,
-      item_id: event.item_id,
-      part: { type: "summary_text", text: event.part.text ?? "" },
+  private fromLifecycleEvent(event: ResponsesAPILifecycleEvent): ResponseEvent {
+    const response: Response = {
+      id: event.response.id,
+      created_at: event.response.created_at,
+      status: event.response.status ?? this.defaultStatus(event.type),
+      output: event.response.output ?? [],
     };
-  }
-
-  /**
-   * Normalizes a Responses API response.reasoning_summary_text.delta event.
-   * @param event The provider reasoning-summary delta event to normalize.
-   * @returns A provider-neutral response.reasoning_summary_text.delta event.
-   */
-  private fromReasoningSummaryTextDelta(
-    event: ResponsesAPIReasoningSummaryTextDeltaEvent,
-  ): ResponseReasoningSummaryTextDelta {
-    return {
-      type: "response.reasoning_summary_text.delta",
-      sequence_number: event.sequence_number,
-      item_id: event.item_id,
-      delta: event.delta,
-    };
-  }
-
-  /**
-   * Normalizes a Responses API response.output_text.delta event.
-   * @param event The provider output-text delta event to normalize.
-   * @returns A provider-neutral response.output_text.delta event.
-   */
-  private fromOutputTextDelta(event: ResponsesAPIOutputTextDeltaEvent): ResponseOutputTextDelta {
-    return {
-      type: "response.output_text.delta",
-      sequence_number: event.sequence_number,
-      item_id: event.item_id,
-      delta: event.delta,
-    };
-  }
-
-  /**
-   * Normalizes a Responses API response.content_part.added event.
-   * @param event The provider content-part event to normalize.
-   * @returns A provider-neutral response.content_part.added event.
-   */
-  private fromContentPartAdded(event: ResponsesAPIContentPartAddedEvent): ResponseContentPartAdded {
-    const part: TextContent | RefusalContent = event.part.type === "output_text"
-      ? { type: "output_text", text: event.part.text }
-      : { type: "refusal", refusal: event.part.refusal };
-    return {
-      type: "response.content_part.added",
-      sequence_number: event.sequence_number,
-      item_id: event.item_id,
-      part,
-    };
-  }
-
-  /**
-   * Normalizes a Responses API response.output_item.added event.
-   * @param event The provider output-item event to normalize.
-   * @returns A provider-neutral response.output_item.added event.
-   */
-  private fromOutputItemAdded(event: ResponsesAPIOutputItemAddedEvent): ResponseOutputItemAdded {
-    const item = this.fromOutputItem(event.item);
-    return {
-      type: "response.output_item.added",
-      sequence_number: event.sequence_number,
-      item,
-    };
-  }
-
-  /**
-   * Normalizes an incremental Responses API output item.
-   * @param item The provider output item to normalize.
-   * @returns A complete provider-neutral output item safe for incremental updates.
-   */
-  private fromOutputItem(item: ResponsesAPIOutputItem): ResponseOutputItem {
-    if (item.type === "reasoning") {
-      return {
-        id: item.id,
-        type: "reasoning",
-        content: item.content ?? [],
-        summary: item.summary ?? [],
-      };
+    if (event.type === "response.incomplete") {
+      return { type: event.type, sequence_number: event.sequence_number ?? 0, response };
     }
-    const sourceContent = Array.isArray(item.content) ? item.content[0] : item.content;
-    const content: OutputMessage["content"] = sourceContent?.type === "refusal"
-      ? { type: "refusal", refusal: sourceContent.refusal }
-      : { type: "output_text", text: sourceContent?.text ?? "" };
-    return { id: item.id, type: "message", role: "assistant", content };
+    return { type: event.type, response };
+  }
+
+  /**
+   * Supplies the lifecycle status when a compatible service omits it.
+   * @param type Lifecycle event type.
+   * @returns Status implied by the lifecycle event.
+   */
+  private defaultStatus(type: ResponsesAPILifecycleEvent["type"]): ResponseStatus {
+    if (type === "response.completed") return "completed";
+    if (type === "response.failed") return "failed";
+    if (type === "response.incomplete") return "incomplete";
+    return "in_progress";
   }
 }

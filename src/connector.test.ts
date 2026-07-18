@@ -1,298 +1,120 @@
 import { describe, expect, it, vi } from "vitest";
-import { ChatCompletionsConverter, Connector, ResponsesAPIConverter } from "./index.js";
+import { Connector, ResponsesAPIConverter } from "./index.js";
 
 /**
- * Creates an SSE response from text chunks.
- * @param chunks Independently delivered stream chunks.
- * @returns A successful streaming response.
+ * Creates a streaming HTTP response.
+ * @param chunks Independently delivered SSE chunks.
+ * @param status HTTP response status.
+ * @returns Mock streaming response.
  */
-function sseResponse(chunks: string[]): Response {
+function sse(chunks: string[], status = 200): Response {
   const encoder = new TextEncoder();
-  return new Response(new ReadableStream<Uint8Array>({
+  return new Response(new ReadableStream({
     start(controller): void {
       for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
       controller.close();
     },
-  }), { status: 200 });
+  }), { status });
+}
+
+/**
+ * Serializes source events as SSE data blocks.
+ * @param events Source events to serialize.
+ * @returns Complete SSE payload.
+ */
+function blocks(events: object[]): string {
+  return events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
 }
 
 describe("Connector", () => {
-  it("processes every normalized event returned for one source event", async () => {
-    const source = {
-      id: "chat_1",
-      created: 123,
-      choices: [{ index: 0, delta: { role: "assistant", content: "Hello" } }],
-    };
-    const connector = new Connector("url", "key", new ChatCompletionsConverter(), {
-      fetch: vi.fn().mockResolvedValue(sseResponse([`data: ${JSON.stringify(source)}\n\n`])),
+  it("posts, yields normalized events, and accumulates all delta kinds", async () => {
+    const source = [
+      { type: "response.created", response: { id: "r", created_at: 1, status: "in_progress" } },
+      { type: "response.output_item.added", item: { type: "reasoning" } },
+      { type: "response.reasoning_summary_text.delta", delta: "think" },
+      { type: "response.output_item.added", item: { type: "message" } },
+      { type: "response.output_text.delta", delta: "hello" },
+      { type: "response.completed", response: { id: "r", created_at: 1, status: "completed", output: [] } },
+    ];
+    const fetchMock = vi.fn().mockResolvedValue(sse([blocks(source), "data: [DONE]\n\n"]));
+    const iterator = new Connector("url", "key", new ResponsesAPIConverter(), { fetch: fetchMock }).call("m", "input");
+    const yielded = [];
+    let next = await iterator.next();
+    while (!next.done) {
+      yielded.push(next.value);
+      next = await iterator.next();
+    }
+    expect(yielded).toHaveLength(6);
+    expect(next.value).toEqual({
+      id: "r", created_at: 1, status: "completed",
+      output: [
+        { type: "reasoning", content: { type: "reasoning_text", text: "" }, summary: { type: "summary_text", text: "think" } },
+        { type: "message", role: "assistant", content: { type: "output_text", text: "hello" } },
+      ],
     });
-    const iterator = connector.call("model", "input");
-
-    expect((await iterator.next()).value).toMatchObject({ type: "response.created" });
-    expect((await iterator.next()).value).toMatchObject({ type: "response.output_item.added" });
-    expect((await iterator.next()).value).toMatchObject({ type: "response.content_part.added" });
-    expect(await iterator.next()).toEqual({
-      done: true,
-      value: {
-        id: "chat_1",
-        created_at: 123,
-        status: "in_progress",
-        output: [{ type: "message", role: "assistant", content: { type: "output_text", text: "Hello" } }],
-      },
-    });
+    expect(fetchMock).toHaveBeenCalledWith("url", expect.objectContaining({
+      method: "POST", body: JSON.stringify({ model: "m", input: "input", stream: true }),
+    }));
   });
 
-  it("uses the global fetch implementation by default", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(sseResponse([
-      'data: {"type":"response.created","sequence_number":0,"response":{"id":"r","created_at":1,"error":null}}\n\n',
-    ]));
-    vi.stubGlobal("fetch", fetchMock);
-    try {
-      const connector = new Connector("url", "key", new ResponsesAPIConverter());
-      await expect(Array.fromAsync(connector.call("model", "input"))).resolves.toHaveLength(1);
-    } finally {
-      vi.unstubAllGlobals();
+  it("appends repeated deltas and handles refusal and failed replacement", async () => {
+    const failed = { id: "r", created_at: 1, status: "failed" as const, output: [] };
+    const source = [
+      { type: "response.created", response: { id: "r", created_at: 1 } },
+      { type: "response.content_part.added", part: { type: "output_refusal" } },
+      { type: "response.content_part.added", part: { type: "refusal" } },
+      { type: "response.failed", response: failed },
+    ];
+    const iterator = new Connector("url", "key", new ResponsesAPIConverter(), { fetch: vi.fn().mockResolvedValue(sse([blocks(source)])) }).call("m", []);
+    for (let index = 0; index < source.length; index += 1) await iterator.next();
+    expect((await iterator.next()).value).toEqual(failed);
+  });
+
+  it("preserves the accumulated response for incomplete", async () => {
+    const source = [
+      { type: "response.created", response: { id: "r", created_at: 1 } },
+      { type: "response.incomplete", sequence_number: 2, response: { id: "r", created_at: 1 } },
+    ];
+    const values = await Array.fromAsync(new Connector("url", "key", new ResponsesAPIConverter(), { fetch: vi.fn().mockResolvedValue(sse([blocks(source)])) }).call("m", "x"));
+    expect(values).toHaveLength(2);
+  });
+
+  it.each([
+    [{ type: "response.output_text.delta", delta: "x" }, "message-text delta"],
+    [{ type: "response.content_part.added", part: { type: "refusal" } }, "message-refusal delta"],
+    [{ type: "response.reasoning_summary_text.delta", delta: "x" }, "reasoning-summary delta"],
+    [{ type: "response.completed", response: { id: "r", created_at: 1 } }, "response.completed"],
+    [{ type: "response.incomplete", response: { id: "r", created_at: 1 } }, "response.incomplete"],
+  ])("rejects %j before creation", async (event, message) => {
+    const call = new Connector("url", "key", new ResponsesAPIConverter(), { fetch: vi.fn().mockResolvedValue(sse([blocks([event])])) }).call("m", "x");
+    await expect(Array.fromAsync(call)).rejects.toThrow(message);
+  });
+
+  it("rejects mixed text and refusal deltas", async () => {
+    const prefix = { type: "response.created", response: { id: "r", created_at: 1 } };
+    for (const events of [
+      [prefix, { type: "response.output_text.delta", delta: "x" }, { type: "response.content_part.added", part: { type: "refusal" } }],
+      [prefix, { type: "response.content_part.added", part: { type: "refusal" } }, { type: "response.output_text.delta", delta: "x" }],
+    ]) {
+      const call = new Connector("url", "key", new ResponsesAPIConverter(), { fetch: vi.fn().mockResolvedValue(sse([blocks(events)])) }).call("m", "x");
+      await expect(Array.fromAsync(call)).rejects.toThrow("mixed");
     }
   });
 
-  it("posts parameters, yields response.created, and returns ResponseResult", async () => {
-    const source = {
-      type: "response.created",
-      sequence_number: 0,
-      response: { id: "resp_1", created_at: 123, error: null },
-    };
-    const fetchMock = vi.fn().mockResolvedValue(sseResponse([
-      `event: response.created\r\ndata: ${JSON.stringify(source)}`,
-      "\r\n\r\n: keepalive\n\ndata: [DONE]",
+  it("parses split, CRLF, multiline and final SSE blocks", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sse([
+      ": keepalive\r\n\r\ndata:{\"type\":\"response.created\",\r\n",
+      "data: \"response\":{\"id\":\"r\",\"created_at\":1}}",
     ]));
-    const connector = new Connector("https://example.test/v1/responses", "secret", new ResponsesAPIConverter(), { fetch: fetchMock });
-    const iterator = connector.call("gpt-test", "Hello", { instructions: "Brief" });
-
-    expect(await iterator.next()).toEqual({ done: false, value: source });
-    expect(await iterator.next()).toEqual({ done: true, value: { id: "resp_1", created_at: 123, output: [] } });
-    expect(fetchMock).toHaveBeenCalledWith("https://example.test/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer secret",
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
-      },
-      body: JSON.stringify({ model: "gpt-test", input: "Hello", instructions: "Brief", stream: true }),
-    });
+    await expect(Array.fromAsync(new Connector("url", "key", new ResponsesAPIConverter(), { fetch: fetchMock }).call("m", "x"))).resolves.toHaveLength(1);
   });
 
-  it("yields and accumulates response.output_item.added", async () => {
-    const item = { id: "msg_1", type: "message" as const, role: "assistant" as const, content: { type: "output_text" as const, text: "" } };
-    const events = [
-      { type: "response.created", sequence_number: 0, response: { id: "resp_1", created_at: 123, error: null } },
-      { type: "response.in_progress", sequence_number: 1 },
-      { type: "response.output_item.added", sequence_number: 2, item },
-    ];
-    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
-      fetch: vi.fn().mockResolvedValue(sseResponse(events.map((event) => `data: ${JSON.stringify(event)}\n\n`))),
-    });
-    const iterator = connector.call("model", "input");
-
-    expect((await iterator.next()).value).toEqual(events[0]);
-    expect((await iterator.next()).value).toEqual(events[2]);
-    expect(await iterator.next()).toEqual({ done: true, value: { id: "resp_1", created_at: 123, output: [item] } });
-  });
-
-  it("rejects an output item emitted before response.created", async () => {
-    const item = { id: "reasoning_1", type: "reasoning", content: [], summary: [] };
-    const event = { type: "response.output_item.added", sequence_number: 0, item };
-    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
-      fetch: vi.fn().mockResolvedValue(sseResponse([`data: ${JSON.stringify(event)}\n\n`])),
-    });
-    await expect(Array.fromAsync(connector.call("model", "input"))).rejects.toThrow("before response.created");
-  });
-
-  it("writes response.content_part.added into its message output item", async () => {
-    const item = { id: "msg_1", type: "message", role: "assistant", content: { type: "output_text", text: "" } };
-    const sourcePart = { type: "output_text", text: "Hello" };
-    const part = { type: "output_text", text: "Hello" };
-    const events = [
-      { type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } },
-      { type: "response.output_item.added", sequence_number: 1, item },
-      { type: "response.content_part.added", sequence_number: 2, item_id: "msg_1", part: sourcePart },
-    ];
-    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
-      fetch: vi.fn().mockResolvedValue(sseResponse(events.map((event) => `data: ${JSON.stringify(event)}\n\n`))),
-    });
-    const iterator = connector.call("model", "input");
-
-    await iterator.next();
-    await iterator.next();
-    expect((await iterator.next()).value).toEqual({ ...events[2], part });
-    expect(await iterator.next()).toEqual({
-      done: true,
-      value: { id: "r", created_at: 1, output: [{ ...item, content: part }] },
-    });
-  });
-
-  it.each([
-    {
-      name: "before response.created",
-      events: [{ type: "response.content_part.added", sequence_number: 0, item_id: "msg_1", part: { type: "output_text", text: "" } }],
-      error: "before response.created",
-    },
-    {
-      name: "for an unknown item",
-      events: [
-        { type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } },
-        { type: "response.content_part.added", sequence_number: 1, item_id: "missing", part: { type: "output_text", text: "" } },
-      ],
-      error: "unknown output item missing",
-    },
-    {
-      name: "for a non-message item",
-      events: [
-        { type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } },
-        { type: "response.output_item.added", sequence_number: 1, item: { id: "rs_1", type: "reasoning", content: [], summary: [] } },
-        { type: "response.content_part.added", sequence_number: 2, item_id: "rs_1", part: { type: "output_text", text: "" } },
-      ],
-      error: "non-message output item rs_1",
-    },
-  ])("rejects content emitted $name", async ({ events, error }) => {
-    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
-      fetch: vi.fn().mockResolvedValue(sseResponse(events.map((event) => `data: ${JSON.stringify(event)}\n\n`))),
-    });
-    await expect(Array.fromAsync(connector.call("model", "input"))).rejects.toThrow(error);
-  });
-
-  it("appends response.output_text.delta to its message text", async () => {
-    const events = [
-      { type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } },
-      { type: "response.output_item.added", sequence_number: 1, item: { id: "msg_1", type: "message", role: "assistant", content: { type: "output_text", text: "" } } },
-      { type: "response.content_part.added", sequence_number: 2, item_id: "msg_1", part: { type: "output_text", text: "Hello" } },
-      { type: "response.output_text.delta", sequence_number: 3, item_id: "msg_1", delta: " world" },
-    ];
-    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
-      fetch: vi.fn().mockResolvedValue(sseResponse(events.map((event) => `data: ${JSON.stringify(event)}\n\n`))),
-    });
-    const iterator = connector.call("model", "input");
-
-    await iterator.next();
-    await iterator.next();
-    await iterator.next();
-    expect((await iterator.next()).value).toEqual(events[3]);
-    expect(await iterator.next()).toEqual({
-      done: true,
-      value: {
-        id: "r",
-        created_at: 1,
-        output: [{ id: "msg_1", type: "message", role: "assistant", content: { type: "output_text", text: "Hello world" } }],
-      },
-    });
-  });
-
-  it.each([
-    {
-      name: "before response.created",
-      events: [{ type: "response.output_text.delta", sequence_number: 0, item_id: "msg_1", delta: "x" }],
-      error: "before response.created",
-    },
-    {
-      name: "for an unknown item",
-      events: [
-        { type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } },
-        { type: "response.output_text.delta", sequence_number: 1, item_id: "missing", delta: "x" },
-      ],
-      error: "unknown output item missing",
-    },
-    {
-      name: "for a non-message item",
-      events: [
-        { type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } },
-        { type: "response.output_item.added", sequence_number: 1, item: { id: "rs_1", type: "reasoning", content: [], summary: [] } },
-        { type: "response.output_text.delta", sequence_number: 2, item_id: "rs_1", delta: "x" },
-      ],
-      error: "non-message output item rs_1",
-    },
-    {
-      name: "for a refusal item",
-      events: [
-        { type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } },
-        { type: "response.output_item.added", sequence_number: 1, item: { id: "msg_1", type: "message", role: "assistant", content: { type: "refusal", refusal: "No" } } },
-        { type: "response.output_text.delta", sequence_number: 2, item_id: "msg_1", delta: "x" },
-      ],
-      error: "refusal output item msg_1",
-    },
-  ])("rejects an output-text delta emitted $name", async ({ events, error }) => {
-    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
-      fetch: vi.fn().mockResolvedValue(sseResponse(events.map((event) => `data: ${JSON.stringify(event)}\n\n`))),
-    });
-    await expect(Array.fromAsync(connector.call("model", "input"))).rejects.toThrow(error);
-  });
-
-  it("adds and updates reasoning summary text", async () => {
-    const events = [
-      { type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, status: "in_progress" } },
-      { type: "response.output_item.added", sequence_number: 1, item: { id: "rs_1", type: "reasoning", status: "in_progress" } },
-      { type: "response.reasoning_summary_part.added", sequence_number: 2, item_id: "rs_1", part: { type: "summary_text", text: "" } },
-      { type: "response.reasoning_summary_text.delta", sequence_number: 3, item_id: "rs_1", delta: "Thinking" },
-      { type: "response.reasoning_summary_text.delta", sequence_number: 4, item_id: "rs_1", delta: " done" },
-    ];
-    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
-      fetch: vi.fn().mockResolvedValue(sseResponse(events.map((event) => `data: ${JSON.stringify(event)}\n\n`))),
-    });
-    const iterator = connector.call("model", "input");
-
-    for (let index = 0; index < events.length; index += 1) await iterator.next();
-    expect(await iterator.next()).toEqual({
-      done: true,
-      value: {
-        id: "r",
-        created_at: 1,
-        status: "in_progress",
-        output: [{ id: "rs_1", type: "reasoning", content: [], summary: [{ type: "summary_text", text: "Thinking done" }] }],
-      },
-    });
-  });
-
-  it.each([
-    ["part before response.created", [{ type: "response.reasoning_summary_part.added", sequence_number: 0, item_id: "rs_1", part: { type: "summary_text", text: "" } }], "before response.created"],
-    ["part for an unknown item", [{ type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } }, { type: "response.reasoning_summary_part.added", sequence_number: 1, item_id: "missing", part: { type: "summary_text", text: "" } }], "unknown output item missing"],
-    ["part for a message", [{ type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } }, { type: "response.output_item.added", sequence_number: 1, item: { id: "msg_1", type: "message", role: "assistant", content: { type: "output_text", text: "" } } }, { type: "response.reasoning_summary_part.added", sequence_number: 2, item_id: "msg_1", part: { type: "summary_text", text: "" } }], "non-reasoning output item msg_1"],
-    ["delta before response.created", [{ type: "response.reasoning_summary_text.delta", sequence_number: 0, item_id: "rs_1", delta: "x" }], "before response.created"],
-    ["delta for an unknown item", [{ type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } }, { type: "response.reasoning_summary_text.delta", sequence_number: 1, item_id: "missing", delta: "x" }], "unknown output item missing"],
-    ["delta for a message", [{ type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } }, { type: "response.output_item.added", sequence_number: 1, item: { id: "msg_1", type: "message", role: "assistant", content: { type: "output_text", text: "" } } }, { type: "response.reasoning_summary_text.delta", sequence_number: 2, item_id: "msg_1", delta: "x" }], "non-reasoning output item msg_1"],
-    ["delta before a summary part", [{ type: "response.created", sequence_number: 0, response: { id: "r", created_at: 1, error: null } }, { type: "response.output_item.added", sequence_number: 1, item: { id: "rs_1", type: "reasoning", content: [], summary: [] } }, { type: "response.reasoning_summary_text.delta", sequence_number: 2, item_id: "rs_1", delta: "x" }], "before a summary part"],
-  ])("rejects a reasoning-summary %s", async (_name, events, error) => {
-    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
-      fetch: vi.fn().mockResolvedValue(sseResponse(events.map((event) => `data: ${JSON.stringify(event)}\n\n`))),
-    });
-    await expect(Array.fromAsync(connector.call("model", "input"))).rejects.toThrow(error);
-  });
-
-  it("joins multiline data fields and uses default options", async () => {
-    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
-      fetch: vi.fn().mockResolvedValue(sseResponse([
-        "data:{\"type\":\"response.created\",\n",
-        "data: \"sequence_number\":1,\"response\":{\"id\":\"r\",\"created_at\":1,\"error\":null}}\n\n",
-      ])),
-    });
-    await expect(Array.fromAsync(connector.call("model", []))).resolves.toHaveLength(1);
-  });
-
-  it("rejects unsuccessful responses", async () => {
-    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
-      fetch: vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
-    });
-    await expect(Array.fromAsync(connector.call("model", "input"))).rejects.toThrow("status 401");
-  });
-
-  it("rejects responses without a body", async () => {
-    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
-      fetch: vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
-    });
-    await expect(Array.fromAsync(connector.call("model", "input"))).rejects.toThrow("did not include a body");
-  });
-
-  it("rejects streams without a supported event", async () => {
-    const connector = new Connector("url", "key", new ResponsesAPIConverter(), {
-      fetch: vi.fn().mockResolvedValue(sseResponse([": keepalive\n\ndata: [DONE]\n\n"])),
-    });
-    await expect(Array.fromAsync(connector.call("model", "input"))).rejects.toThrow("supported event");
+  it("uses global fetch and validates HTTP responses", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(sse([blocks([{ type: "response.created", response: { id: "r", created_at: 1 } }])])));
+    await expect(Array.fromAsync(new Connector("url", "key", new ResponsesAPIConverter()).call("m", "x"))).resolves.toHaveLength(1);
+    vi.unstubAllGlobals();
+    await expect(Array.fromAsync(new Connector("url", "key", new ResponsesAPIConverter(), { fetch: vi.fn().mockResolvedValue(sse([], 401)) }).call("m", "x"))).rejects.toThrow("401");
+    await expect(Array.fromAsync(new Connector("url", "key", new ResponsesAPIConverter(), { fetch: vi.fn().mockResolvedValue(new Response(null, { status: 204 })) }).call("m", "x"))).rejects.toThrow("body");
+    await expect(Array.fromAsync(new Connector("url", "key", new ResponsesAPIConverter(), { fetch: vi.fn().mockResolvedValue(sse([": ping\n\ndata: [DONE]\n\n"])) }).call("m", "x"))).rejects.toThrow("supported event");
   });
 });

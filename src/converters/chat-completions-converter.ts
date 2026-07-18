@@ -2,9 +2,8 @@ import type {
   Converter,
   InputItem,
   NormalizedParams,
+  Response,
   ResponseEvent,
-  ResponseOutputItem,
-  ResponseResult,
 } from "../typings/index.js";
 
 /** A Chat Completions request message. */
@@ -24,18 +23,17 @@ export interface ChatCompletionsDelta {
 /** One choice in a Chat Completions streaming chunk. */
 export interface ChatCompletionsChoice { index: number; delta: ChatCompletionsDelta }
 /** Streaming chunk returned by a Chat Completions-compatible endpoint. */
-export interface ChatCompletionsSourceEvent {
+export interface ChatCompletionsChunk {
   id: string;
   created: number;
   choices: ChatCompletionsChoice[];
   [key: string]: unknown;
 }
+/** Source data accepted by ChatCompletionsConverter. */
+export type ChatCompletionsSourceEvent = ChatCompletionsChunk | "[DONE]";
 
 /** Converts requests and streaming chunks for Chat Completions-compatible APIs. */
 export class ChatCompletionsConverter implements Converter<ChatCompletionsRequest, ChatCompletionsSourceEvent> {
-  private sequenceNumber = 0;
-  private responseId: string | undefined;
-
   /**
    * Converts provider-neutral parameters to a streaming Chat Completions request.
    * @param params Provider-neutral model parameters.
@@ -50,26 +48,27 @@ export class ChatCompletionsConverter implements Converter<ChatCompletionsReques
   /**
    * Converts a Chat Completions chunk into a normalized response event.
    * @param event The provider streaming chunk.
-   * @param result The response result accumulated before this chunk.
+   * @param response The response accumulated before this chunk.
    * @returns A normalized event, or undefined for an empty chunk.
    */
-  public fromEvent(event: ChatCompletionsSourceEvent, result: ResponseResult | undefined): ResponseEvent | ResponseEvent[] | undefined {
+  public fromEvent(event: ChatCompletionsSourceEvent, response: Response | undefined): ResponseEvent | ResponseEvent[] | undefined {
+    if (event === "[DONE]") {
+      if (response === undefined) throw new Error("Chat Completions stream ended before response.created");
+      return { type: "response.completed", response };
+    }
     const events: ResponseEvent[] = [];
-    const isFirstEvent = result === undefined || this.responseId !== event.id;
-    if (isFirstEvent) {
-      this.responseId = event.id;
-      this.sequenceNumber = 0;
+    if (response === undefined) {
       events.push({
         type: "response.created",
-        sequence_number: this.nextSequence(),
-        response: { id: event.id, created_at: event.created, status: "in_progress", error: null },
+        response: { id: event.id, created_at: event.created, status: "in_progress", output: [] },
       });
     }
     const delta = event.choices[0]?.delta;
-    const currentResult = isFirstEvent ? undefined : result;
-    if (delta?.reasoning_content !== undefined) events.push(...this.fromReasoning(delta.reasoning_content, currentResult));
-    if (delta?.content !== undefined) events.push(...this.fromContent(delta.content, currentResult));
-    return events.length === 0 ? undefined : events;
+    if (delta?.reasoning_content !== undefined) events.push(this.fromReasoning(delta.reasoning_content));
+    if (delta?.content !== undefined) events.push(this.fromContent(delta.content));
+    if (events.length > 0) return events;
+    console.log(event);
+    return undefined;
   }
 
   /**
@@ -96,59 +95,18 @@ export class ChatCompletionsConverter implements Converter<ChatCompletionsReques
   /**
    * Converts reasoning text to an output-item or summary delta event.
    * @param text Incremental reasoning text.
-   * @param result The current accumulated response.
    * @returns The normalized reasoning event.
    */
-  private fromReasoning(text: string, result: ResponseResult | undefined): ResponseEvent[] {
-    const item = result?.output.find((output) => output.type === "reasoning");
-    if (item === undefined) {
-      return [
-        this.outputItem({ type: "reasoning", content: [], summary: [] }),
-        { type: "response.reasoning_summary_part.added", sequence_number: this.nextSequence(), part: { type: "summary_text", text } },
-      ];
-    }
-    if (item.summary.length === 0) {
-      return [{ type: "response.reasoning_summary_part.added", sequence_number: this.nextSequence(), part: { type: "summary_text", text } }];
-    }
-    return [{ type: "response.reasoning_summary_text.delta", sequence_number: this.nextSequence(), delta: text }];
+  private fromReasoning(text: string): ResponseEvent {
+    return { type: "response.reasoning_summary_text.delta", delta: text };
   }
 
   /**
    * Converts assistant text to an output-item or text delta event.
    * @param text Incremental assistant text.
-   * @param result The current accumulated response.
    * @returns The normalized assistant event.
    */
-  private fromContent(text: string, result: ResponseResult | undefined): ResponseEvent[] {
-    const item = result?.output.find((output) => output.type === "message");
-    if (item === undefined) {
-      return [
-        this.outputItem({ type: "message", role: "assistant", content: { type: "output_text", text: "" } }),
-        { type: "response.content_part.added", sequence_number: this.nextSequence(), part: { type: "output_text", text } },
-      ];
-    }
-    if (item.content.type === "output_text" && item.content.text.length === 0) {
-      return [{ type: "response.content_part.added", sequence_number: this.nextSequence(), part: { type: "output_text", text } }];
-    }
-    return [{ type: "response.output_text.delta", sequence_number: this.nextSequence(), delta: text }];
-  }
-
-  /**
-   * Wraps a newly discovered output item in a normalized event.
-   * @param item The normalized output item.
-   * @returns A response.output_item.added event.
-   */
-  private outputItem(item: ResponseOutputItem): ResponseEvent {
-    return { type: "response.output_item.added", sequence_number: this.nextSequence(), item };
-  }
-
-  /**
-   * Returns and advances the normalized event sequence number.
-   * @returns The next event sequence number.
-   */
-  private nextSequence(): number {
-    const current = this.sequenceNumber;
-    this.sequenceNumber += 1;
-    return current;
+  private fromContent(text: string): ResponseEvent {
+    return { type: "response.message_text.delta", delta: text };
   }
 }

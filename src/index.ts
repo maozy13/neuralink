@@ -4,24 +4,14 @@ export { ResponsesAPIConverter } from "./converters/responses-api-converter.js";
 export { ChatCompletionsConverter } from "./converters/chat-completions-converter.js";
 export type {
   ChatCompletionsChoice,
+  ChatCompletionsChunk,
   ChatCompletionsDelta,
   ChatCompletionsMessage,
   ChatCompletionsRequest,
   ChatCompletionsSourceEvent,
 } from "./converters/chat-completions-converter.js";
 export type {
-  ResponsesAPICreatedEvent,
-  ResponsesAPIContentPartAddedEvent,
-  ResponsesAPIMetadata,
-  ResponsesAPIOutputItemAddedEvent,
-  ResponsesAPIOutputItem,
-  ResponsesAPIOutputMessage,
-  ResponsesAPIOutputTextDeltaEvent,
   ResponsesAPIRequest,
-  ResponsesAPIReasoningSummaryPartAddedEvent,
-  ResponsesAPIReasoningSummaryTextDeltaEvent,
-  ResponsesAPIReasoning,
   ResponsesAPISourceEvent,
-  ResponsesAPIUnknownEvent,
 } from "./converters/responses-api-converter.js";
 export type * from "./typings/index.js";

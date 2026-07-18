@@ -8,10 +8,10 @@ classDiagram
 class Converter~RequestParams, SourceEvent~ {
   <<abstract>>
   toAPI(params: NormalizedParams) RequestParams
-  fromEvent(event: SourceEvent, result: ResponseResult) ResponseEvent
+  fromEvent(event: SourceEvent, response: Response) ResponseEvent
 }
 ```
-
+ 
 ## 方法
 
 `Converter.toAPI(params: NormalizedParams): RequestParams`
@@ -24,14 +24,14 @@ class Converter~RequestParams, SourceEvent~ {
 | -- | -- | -- |
 | params | NormalizedParams | 规范化的模型调用参数 |
 
-`Converter.fromEvent(event: SourceEvent, result: ResponseResult): ResponseEvent`
+`Converter.fromEvent(event: SourceEvent, response: Response): ResponseEvent`
 
 将从模型服务 API 接收到的 event 转换为规范化的 event 结构。
 
 | 参数 | 类型 | 说明 |
 | -- | -- | -- |
 | event | SourceEvent | 从模型服务 API 接收到的 event |
-| result | ResponseResult | 上一轮处理完后的响应结果 |
+| response | Response | 上一轮处理完后的响应结果 |
 
 ## 类型
 
@@ -55,13 +55,13 @@ RequestParams 是一个泛型，描述模型服务 API 接受的转换后类型�
 
 SourceEvent 是一个泛型,描述从模型 API 服务返回的 event 事件。需要在实现 Converter 时传入类型定义。
 
-`ResponseResult`
-
-规范化的响应结果对象。Schema 参考：[ResponseResult](response-result.md)
-
 `ResponseEvent`
 
 ResponseEvent 是规范化的事件对象类型，Schema 参考：[ResponseEvent](response-event.md)
+
+`Response`
+
+规范化的响应结果对象。Schema 参考：[Response](response.md)
 
 ## 预置 Converter
 

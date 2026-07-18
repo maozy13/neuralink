@@ -9,7 +9,7 @@ class Connector {
   baseUrl: string
   apiKey: string
   converter: Converter
-  call(model: string, input: string | Array~InputItem~, optional?: Optional) AsyncIterator~ResponseEvent, ResponseResult~
+  call(model: string, input: string | Array~InputItem~, optional?: Optional) AsyncIterator~ResponseEvent, Response~
 }
 ```
 
@@ -23,7 +23,7 @@ class Connector {
 
 ## 方法
 
-`call(model: string, input: string | Array<InputItem>, optional?: Optional): AsyncIterator<ResponseEvent, ResponseResult>` 
+`call(model: string, input: string | Array<InputItem>, optional?: Optional): AsyncIterator<ResponseEvent, Response>` 
 
 调用模型 API 服务并流式输出结果。注意：`ResponseEvent`是经过 Connector 内部逻辑处理过的事件对象，不等同于任何模型 API 服务返回的原始 Event。
 
@@ -68,7 +68,7 @@ InputItem 是 Connector 接收的规范化的模型输入，可以是以下结�
 
 | 属性 | 类型 | 说明 |
 | -- | -- | -- |
-| role | "user" \| "assistant" \| "developer" \| "system" | 消息发起者的角色 |
+| role | enum("user", "assistant", "developer", "system") | 消息发起者的角色 |
 | type | "message" | input 的类型，固定为 "message" |
 | content | TextMessage \| ImageMessage \| FileMessage | 消息的类型 |
 
@@ -130,6 +130,6 @@ InputItem 是 Connector 接收的规范化的模型输入，可以是以下结�
 | type | "input_file" | 消息类型，固定为 "input_file" |
 | file_url | uri | 文件的 URI 地址 |
 
-`ResponseResult`
+`Response`
 
-增量累积后的响应对象。参考：[response-result.md](response-result.md)
+增量累积后的响应对象。参考：[response.md](response.md)

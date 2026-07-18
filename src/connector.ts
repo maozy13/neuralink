@@ -1,10 +1,10 @@
-import type { Converter, InputItem, Optional, ResponseEvent, ResponseResult } from "./typings/index.js";
+import type { Converter, InputItem, Optional, Response, ResponseEvent } from "./typings/index.js";
 
 /** Handles one normalized event type and returns the updated response result. */
 type ResponseEventHandler<EventType extends ResponseEvent["type"]> = (
   event: Extract<ResponseEvent, { type: EventType }>,
-  result: ResponseResult | undefined,
-) => ResponseResult;
+  result: Response | undefined,
+) => Response;
 
 /** Maps every supported event type to its response-result update handler. */
 type ResponseEventHandlerMap = {
@@ -12,87 +12,68 @@ type ResponseEventHandlerMap = {
 };
 
 const responseEventHandlers = {
-  "response.created": (event) => ({
-    id: event.response.id,
-    created_at: event.response.created_at,
-    status: event.response.status,
-    output: [],
-  }),
-  "response.output_item.added": (event, result) => {
-    if (result === undefined) {
-      throw new Error("Model API emitted an output item before response.created");
-    }
-    result.output.push(event.item);
-    return result;
+  "response.created": (event) => event.response,
+  "response.completed": (_event, result) => {
+    const response = requireResponse(result, "response.completed");
+    response.status = "completed";
+    return response;
   },
-  "response.content_part.added": (event, result) => {
+  "response.failed": (event) => event.response,
+  "response.incomplete": (_event, result) => requireResponse(result, "response.incomplete"),
+  "response.message_text.delta": (event, result) => {
     if (result === undefined) {
-      throw new Error("Model API emitted a content part before response.created");
+      throw new Error("Model API emitted a message-text delta before response.created");
     }
-    const item = result.output.find((outputItem) => outputItem.type === "message")
-      ?? result.output[0];
+    const item = result.output.find((outputItem) => outputItem.type === "message");
     if (item === undefined) {
-      throw new Error(`Model API emitted content for unknown output item ${event.item_id}`);
+      result.output.push({ type: "message", role: "assistant", content: { type: "output_text", text: event.delta } });
+      return result;
     }
-    if (item.type !== "message") {
-      throw new Error(`Model API emitted message content for non-message output item ${event.item_id}`);
-    }
-    item.content = event.part;
-    return result;
-  },
-  "response.output_text.delta": (event, result) => {
-    if (result === undefined) {
-      throw new Error("Model API emitted an output-text delta before response.created");
-    }
-    const item = result.output.find((outputItem) => outputItem.type === "message")
-      ?? result.output[0];
-    if (item === undefined) {
-      throw new Error(`Model API emitted an output-text delta for unknown output item ${event.item_id}`);
-    }
-    if (item.type !== "message") {
-      throw new Error(`Model API emitted an output-text delta for non-message output item ${event.item_id}`);
-    }
-    if (item.content.type !== "output_text") {
-      throw new Error(`Model API emitted an output-text delta for refusal output item ${event.item_id}`);
-    }
+    if (item.content.type !== "output_text") throw new Error("Model API mixed message text and refusal deltas");
     item.content.text += event.delta;
     return result;
   },
-  "response.reasoning_summary_part.added": (event, result) => {
+  "response.message_refusal.delta": (event, result) => {
     if (result === undefined) {
-      throw new Error("Model API emitted a reasoning-summary part before response.created");
+      throw new Error("Model API emitted a message-refusal delta before response.created");
     }
-    const item = result.output.find((outputItem) => outputItem.type === "reasoning")
-      ?? result.output[0];
+    const item = result.output.find((outputItem) => outputItem.type === "message");
     if (item === undefined) {
-      throw new Error(`Model API emitted a reasoning-summary part for unknown output item ${event.item_id}`);
+      result.output.push({ type: "message", role: "assistant", content: { type: "refusal", refusal: event.delta } });
+      return result;
     }
-    if (item.type !== "reasoning") {
-      throw new Error(`Model API emitted a reasoning-summary part for non-reasoning output item ${event.item_id}`);
-    }
-    item.summary.push(event.part);
+    if (item.content.type !== "refusal") throw new Error("Model API mixed message text and refusal deltas");
+    item.content.refusal += event.delta;
     return result;
   },
   "response.reasoning_summary_text.delta": (event, result) => {
     if (result === undefined) {
       throw new Error("Model API emitted a reasoning-summary delta before response.created");
     }
-    const item = result.output.find((outputItem) => outputItem.type === "reasoning")
-      ?? result.output[0];
+    const item = result.output.find((outputItem) => outputItem.type === "reasoning");
     if (item === undefined) {
-      throw new Error(`Model API emitted a reasoning-summary delta for unknown output item ${event.item_id}`);
+      result.output.push({
+        type: "reasoning",
+        content: { type: "reasoning_text", text: "" },
+        summary: { type: "summary_text", text: event.delta },
+      });
+      return result;
     }
-    if (item.type !== "reasoning") {
-      throw new Error(`Model API emitted a reasoning-summary delta for non-reasoning output item ${event.item_id}`);
-    }
-    const summary = item.summary.at(-1);
-    if (summary === undefined) {
-      throw new Error(`Model API emitted a reasoning-summary delta before a summary part for output item ${event.item_id}`);
-    }
-    summary.text += event.delta;
+    item.summary.text += event.delta;
     return result;
   },
 } satisfies ResponseEventHandlerMap;
+
+/**
+ * Requires an accumulated response for a terminal lifecycle event.
+ * @param response Response accumulated before the event.
+ * @param type Lifecycle event type used in the error message.
+ * @returns The accumulated response.
+ */
+function requireResponse(response: Response | undefined, type: string): Response {
+  if (response === undefined) throw new Error(`Model API emitted ${type} before response.created`);
+  return response;
+}
 
 /** Runtime dependencies accepted by Connector. */
 export interface ConnectorOptions { fetch?: typeof fetch }
@@ -133,7 +114,7 @@ export class Connector<RequestParams, SourceEvent> {
     model: string,
     input: string | InputItem[],
     optional: Optional = {},
-  ): AsyncGenerator<ResponseEvent, ResponseResult> {
+  ): AsyncGenerator<ResponseEvent, Response> {
     const response = await this.fetchImplementation(this.baseUrl, {
       method: "POST",
       headers: {
@@ -146,14 +127,14 @@ export class Connector<RequestParams, SourceEvent> {
     if (!response.ok) throw new Error(`Model API request failed with status ${response.status}`);
     if (response.body === null) throw new Error("Model API response did not include a body");
 
-    let result: ResponseResult | undefined;
+    let result: Response | undefined;
     for await (const data of parseServerSentEvents(response.body)) {
-      if (data === "[DONE]") continue;
-      const converted = this.converter.fromEvent(JSON.parse(data) as SourceEvent, result);
+      const sourceEvent = data === "[DONE]" ? data as SourceEvent : JSON.parse(data) as SourceEvent;
+      const converted = this.converter.fromEvent(sourceEvent, result);
       if (converted === undefined) continue;
       const events = Array.isArray(converted) ? converted : [converted];
       for (const event of events) {
-        result = updateResponseResult(event, result);
+        result = updateResponse(event, result);
         yield event;
       }
     }
@@ -168,7 +149,7 @@ export class Connector<RequestParams, SourceEvent> {
  * @param result The response result accumulated before this event.
  * @returns The response result after applying the mapped handler.
  */
-function updateResponseResult(event: ResponseEvent, result: ResponseResult | undefined): ResponseResult {
+function updateResponse(event: ResponseEvent, result: Response | undefined): Response {
   const handler = responseEventHandlers[event.type] as ResponseEventHandler<ResponseEvent["type"]>;
   return handler(event, result);
 }

@@ -28,7 +28,7 @@ participant API as LLM API Service
 App ->> Connector: 发起请求
 
 activate Connector
-  Connector ->> Connector: 创建 ResponseResult 对象
+  Connector ->> Connector: 创建 Response 对象
 	Connector ->> Connector: Converter.toAPI()
 deactivate Connector
 
@@ -40,10 +40,10 @@ loop 处理 SourceEvent
 
   activate Connector
 	  Connector ->> Connector: Converter.fromEvent()
-    Connector ->> Connector: 更新 ResponseResult
+    Connector ->> Connector: 更新 Response
   deactivate Connector
 
-  Connector ->> App: 输出规范化的 ResponseEvent 和 ResponseResult
+  Connector ->> App: 输出规范化的 ResponseEvent 和 Response
 end
 ```
 

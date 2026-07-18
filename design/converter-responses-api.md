@@ -4,40 +4,18 @@ ResponsesAPIConverter 负责在 Connector 和 Response API 风格的接口之间
 
 ## 概述
 
-Response API 的事件会返回 `type` 属性用来标识不同的事件类型。根据不同的事件类型我们需要定义对应的处理算子，每个算子接收 SourceEvent 并返回规范化后的 ResponseEvent。
+Response API 的事件会返回 `type` 属性用来标识不同的事件类型。根据不同的事件类型我们需要定义对应的映射算子，每个算子接收 SourceEvent 并返回规范化后的 ResponseEvent。
 
 - ResponseEvent 的定义参考：[response-event.md](response-event.md)
 - Response API 风格接口参考： [OpenAI 官方文档](https://developers.openai.com/api/reference/resources/responses/index.md) 
 
-## 处理算子
+如果事件类型没有对应的映射算子，则该事件类型暂不需要进行转换，打印原始的 SourceEvent 并跳过映射逻辑。
 
-```mermaid
-flowchart LR
+注意：算子只应该处理 SourceEvent 并返回 ResponseEvent，更新 Response 的操作应该在 Connector 中进行。
 
-Start([开始])
-HandleEvent[处理 SourceEvent]
-HasOperator{event.type 是否有对应算子}
-CallOperator[调用算子]
-YieldResult[返回 ResponseEvent]
-HasMore{是否还有更多 SourceEvent}
-End([结束])
+以下是根据 SourceEvent 的 `type` 属性来进行分类的映射逻辑：
 
-Start --> HandleEvent --> HasOperator
-HasOperator -- 是 --> CallOperator --> YieldResult
-HasOperator -- 否 --> YieldResult
-YieldResult --> HasMore
-HasMore -- 是 --> HandleEvent
-HasMore -- 否 --> End
-
-```
-
-如果事件类型没有对应的处理算子，则该事件类型暂不需要进行转换，打印原始的 SourceEvent 并跳过处理逻辑。
-
-注意：算子只应该处理 SourceEvent 并返回 ResponseEvent，更新 ResponseEvent 的操作应该在 Connector 中进行。
-
-以下处理算子根据 SourceEvent 的 `type` 属性来进行分类。
-
-- `responses.created`
+### `responses.created`
 
 SourceEvent 示例：
 
@@ -53,9 +31,9 @@ SourceEvent 示例：
 }
 ```
 
-映射方式：映射到 ResponseCreated 类型。
+映射到 ResponseCreated 事件。
 
-- `response.output_item.added`
+### `response.output_item.added`
 
 SourceEvent 示例：
 
@@ -74,9 +52,10 @@ SourceEvent 示例：
 }
 ```
 
-映射方式：映射到 ResponseOutputItemAdded 类型。
+- 如果 `item.type` 是 "message"，则映射到 ResponseMessageTextDelta 事件。
+- 如果 `item.type` 是 "reasoning"，则映射到 ResponseReasoningSummaryTextDelta 事件。
 
-- `response.content_part.added`
+### `response.content_part.added`
 
 SourceEvent 示例：
 
@@ -92,9 +71,10 @@ SourceEvent 示例：
 }
 ```
 
-映射方式：映射到 ResponseContentPartAdded 类型。
+- 如果 `item.part.type` 是 "output_text"，则映射到 ResponseMessageTextDelta 事件。
+- 如果 `item.part.type` 是 "output_refusal"，则映射到 ResponseMessageRefusalDelta 事件。
 
-- `response.output_text.delta`
+### `response.output_text.delta`
 
 SourceEvent 示例：
 
@@ -107,9 +87,9 @@ SourceEvent 示例：
 }
 ```
 
-映射方式：映射到 ResponseOutputTextDelta 类型。
+映射到 ResponseMessageTextDelta 事件。
 
-- `response.reasoning_summary_part.added`
+### `response.reasoning_summary_part.added`
 
 SourceEvent 示例：
 
@@ -125,9 +105,9 @@ SourceEvent 示例：
 }
 ```
 
-映射方式：映射到 ResponseReasoningSummaryPartAdded 类型。
+映射到 ResponseReasoningSummaryTextDelta 事件。
 
-- `response.reasoning_summary_text.delta`
+### `response.reasoning_summary_text.delta`
 
 SourceEvent 示例：
 
@@ -140,4 +120,4 @@ SourceEvent 示例：
 }
 ```
 
-映射方式：映射到 ResponseReasoningSummaryTextDelta 类型。
+映射到 ResponseReasoningSummaryTextDelta 事件。
