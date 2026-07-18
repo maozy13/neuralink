@@ -20,12 +20,50 @@ describe("ResponsesAPIConverter", () => {
   });
 
   it("maps incomplete responses and preserves response fields", () => {
-    const output = [{ type: "message" as const, role: "assistant" as const, content: { type: "output_text" as const, text: "partial" } }];
+    const sourceOutput = [{ id: "msg", type: "message" as const, role: "assistant" as const, content: [{ type: "output_text" as const, text: "partial" }] }];
+    const output = [{ id: "msg", type: "message" as const, role: "assistant" as const, content: { type: "output_text" as const, text: "partial" } }];
     expect(converter.fromEvent({
       type: "response.incomplete", sequence_number: 7,
-      response: { id: "r", created_at: 1, status: "cancelled", output },
+      response: { id: "r", created_at: 1, status: "cancelled", output: sourceOutput },
     })).toEqual({ type: "response.incomplete", sequence_number: 7, response: { id: "r", created_at: 1, status: "cancelled", output } });
     expect(converter.fromEvent({ type: "response.incomplete", response: { id: "r", created_at: 1 } })).toMatchObject({ sequence_number: 0 });
+  });
+
+  it("normalizes completed response output items", () => {
+    expect(converter.fromEvent({
+      type: "response.completed",
+      response: {
+        id: "r", created_at: 1, status: "completed",
+        output: [
+          { id: "rs", type: "reasoning", content: [{ type: "reasoning_text", text: "Details" }], summary: [{ type: "summary_text", text: "Think" }] },
+          { id: "msg", type: "message", role: "assistant", content: [{ type: "output_text", text: "Hello" }] },
+          { id: "ref", type: "message", role: "assistant", content: [{ type: "refusal", refusal: "No" }] },
+        ],
+      },
+    })).toEqual({
+      type: "response.completed",
+      response: {
+        id: "r", created_at: 1, status: "completed",
+        output: [
+          { id: "rs", type: "reasoning", content: { type: "reasoning_text", text: "Details" }, summary: { type: "summary_text", text: "Think" } },
+          { id: "msg", type: "message", role: "assistant", content: { type: "output_text", text: "Hello" } },
+          { id: "ref", type: "message", role: "assistant", content: { type: "refusal", refusal: "No" } },
+        ],
+      },
+    });
+  });
+
+  it("initializes empty upstream output content", () => {
+    expect(converter.fromEvent({
+      type: "response.completed",
+      response: { id: "r", created_at: 1, output: [
+        { id: "rs", type: "reasoning" },
+        { id: "msg", type: "message", role: "assistant", content: [] },
+      ] },
+    })).toMatchObject({ response: { output: [
+      { content: { type: "reasoning_text", text: "" }, summary: { type: "summary_text", text: "" } },
+      { content: { type: "output_text", text: "" } },
+    ] } });
   });
 
   it.each([

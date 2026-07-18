@@ -3,6 +3,7 @@ import type {
   NormalizedParams,
   Response,
   ResponseEvent,
+  ResponseOutputItem,
   ResponseStatus,
 } from "../typings/index.js";
 
@@ -13,9 +14,31 @@ interface ResponsesAPIResponse {
   id: string;
   created_at: number;
   status?: ResponseStatus;
-  output?: Response["output"];
+  output?: ResponsesAPIOutputItem[];
   [key: string]: unknown;
 }
+/** Text or refusal content returned inside an upstream message item. */
+type ResponsesAPIMessageContent =
+  | { type: "output_text"; text: string; [key: string]: unknown }
+  | { type: "refusal"; refusal: string; [key: string]: unknown };
+/** An upstream Responses API message output item. */
+interface ResponsesAPIMessageItem {
+  id: string;
+  type: "message";
+  role: "assistant";
+  content: ResponsesAPIMessageContent[];
+  [key: string]: unknown;
+}
+/** An upstream Responses API reasoning output item. */
+interface ResponsesAPIReasoningItem {
+  id: string;
+  type: "reasoning";
+  content?: Array<{ type: "reasoning_text"; text: string; [key: string]: unknown }>;
+  summary?: Array<{ type: "summary_text"; text: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+}
+/** An output item carried by an upstream lifecycle response. */
+type ResponsesAPIOutputItem = ResponsesAPIMessageItem | ResponsesAPIReasoningItem;
 /** A Responses API lifecycle event carrying a response object. */
 interface ResponsesAPILifecycleEvent extends ResponsesAPIEvent {
   type: "response.created" | "response.completed" | "response.failed" | "response.incomplete";
@@ -110,12 +133,41 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
       id: event.response.id,
       created_at: event.response.created_at,
       status: event.response.status ?? this.defaultStatus(event.type),
-      output: event.response.output ?? [],
+      output: (event.response.output ?? []).map((item) => this.fromOutputItem(item)),
     };
     if (event.type === "response.incomplete") {
       return { type: event.type, sequence_number: event.sequence_number ?? 0, response };
     }
     return { type: event.type, response };
+  }
+
+  /**
+   * Converts an upstream output item to NeuralLink's normalized single-content shape.
+   * @param item Upstream Responses API output item.
+   * @returns A normalized response output item.
+   */
+  private fromOutputItem(item: ResponsesAPIOutputItem): ResponseOutputItem {
+    if (item.type === "reasoning") {
+      return {
+        id: item.id,
+        type: "reasoning",
+        content: item.content?.[0] === undefined
+          ? { type: "reasoning_text", text: "" }
+          : { type: "reasoning_text", text: item.content[0].text },
+        summary: item.summary?.[0] === undefined
+          ? { type: "summary_text", text: "" }
+          : { type: "summary_text", text: item.summary[0].text },
+      };
+    }
+    const content = item.content[0];
+    return {
+      id: item.id,
+      type: "message",
+      role: "assistant",
+      content: content?.type === "refusal"
+        ? { type: "refusal", refusal: content.refusal }
+        : { type: "output_text", text: content?.text ?? "" },
+    };
   }
 
   /**
