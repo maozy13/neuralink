@@ -19,6 +19,7 @@
 
 - Message
 - Reasoning
+- FunctionCall
 
 ### `Message`
 
@@ -28,8 +29,8 @@
 
 | 属性 | 类型 | 说明 |
 | -- | -- | -- |
-| id | string | 消息对象 ID |
-| type | "message" | 对象类型，固定为 "message" |
+| id | string | 输出项 ID |
+| type | "message" | 输出项类型，固定为 "message" |
 | role | "assistant" | 生成消息对象的角色，固定为 "assistant" |
 | content | TextContent \| RefusalContent | 输出的消息内容 |
 
@@ -41,10 +42,24 @@
 
 | 属性 | 类型 | 说明 |
 | -- | -- | -- |
-| id | string | 推理对象 ID |
-| type | "reasoning" | 对象类型，固定为 "reasoning" |
+| id | string | 输出项 ID |
+| type | "reasoning" | 输出项类型，固定为 "reasoning" |
 | content | ReasoningContent | 推理正文 |
 | summary | ReasoningSummary | 推理摘要 |
+
+### `FunctionCall`
+
+函数调用输出项。
+
+**属性：**
+
+| 属性 | 类型 | 说明 |
+| -- | -- | -- |
+| id | string | 输出项 ID |
+| call_id | string | 函数调用 ID |
+| type | "function_call" | 输出项类型，固定为 "function_call" |
+| name | string | 函数名称 |
+| arguments | string | 函数调用参数，JSON 字符串格式 |
 
 ### `TextContent`
 
@@ -123,3 +138,11 @@ ResponseEvent.response → Response.response
 ### ResponseReasoningSummaryTextDelta
 
 将 ResponseEvent.delta 追加到 ReasoningSummary 的 `text` 文本后。
+
+### ResponseFunctionCallAdded
+
+ResponseEvent.function_call → Response.function_call
+
+### ResponseFunctionCallArgumentsDelta
+
+将 ResponseEvent.delta 追加到 Response.function_call.arguments 文本后。

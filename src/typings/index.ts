@@ -14,10 +14,19 @@ export interface Message {
 export interface FunctionCall { type: "function_call"; call_id: string; name: string; arguments: string }
 /** The result of a previous function call. */
 export interface FunctionCallOutput { type: "function_call_output"; call_id: string; output: string }
+/** A custom function made available to the model. */
+export interface FunctionTool {
+  type: "function";
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+/** Any tool definition accepted by NeuralLink. */
+export type Tool = FunctionTool;
 /** Any structured input accepted by NeuralLink. */
 export type InputItem = Message | FunctionCall | FunctionCallOutput;
 /** Optional model invocation settings. */
-export interface Optional { instructions?: string }
+export interface Optional { instructions?: string; tools?: Tool[] }
 /** Provider-neutral model invocation parameters. */
 export interface NormalizedParams extends Optional { model: string; input: string | InputItem[] }
 /** Lifecycle status of a model response. */
@@ -44,8 +53,16 @@ export interface Reasoning {
   content: ReasoningText;
   summary: SummaryText;
 }
+/** A function call selected by the model. */
+export interface ResponseFunctionCall {
+  id: string;
+  type: "function_call";
+  call_id: string;
+  name: string;
+  arguments: string;
+}
 /** An output item produced by the model. */
-export type ResponseOutputItem = OutputMessage | Reasoning;
+export type ResponseOutputItem = OutputMessage | Reasoning | ResponseFunctionCall;
 /** Accumulated provider-neutral model response. */
 export interface Response {
   id: string;
@@ -61,7 +78,9 @@ export type ResponseEvent =
   | { type: "response.incomplete"; sequence_number: number; response: Response }
   | { type: "response.message_text.delta"; delta: string }
   | { type: "response.message_refusal.delta"; delta: string }
-  | { type: "response.reasoning_summary_text.delta"; delta: string };
+  | { type: "response.reasoning_summary_text.delta"; delta: string }
+  | { type: "response.function_call.added"; function_call: ResponseFunctionCall }
+  | { type: "response.function_call_arguments.delta"; delta: string; index: number };
 /** Converts between provider-specific and NeuralLink representations. */
 export interface Converter<RequestParams, SourceEvent> {
   /**

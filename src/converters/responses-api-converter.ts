@@ -37,8 +37,17 @@ interface ResponsesAPIReasoningItem {
   summary?: Array<{ type: "summary_text"; text: string; [key: string]: unknown }>;
   [key: string]: unknown;
 }
+/** An upstream Responses API function-call output item. */
+interface ResponsesAPIFunctionCallItem {
+  id: string;
+  type: "function_call";
+  call_id: string;
+  name: string;
+  arguments?: string;
+  [key: string]: unknown;
+}
 /** An output item carried by an upstream lifecycle response. */
-type ResponsesAPIOutputItem = ResponsesAPIMessageItem | ResponsesAPIReasoningItem;
+type ResponsesAPIOutputItem = ResponsesAPIMessageItem | ResponsesAPIReasoningItem | ResponsesAPIFunctionCallItem;
 /** A Responses API lifecycle event carrying a response object. */
 interface ResponsesAPILifecycleEvent extends ResponsesAPIEvent {
   type: "response.created" | "response.completed" | "response.failed" | "response.incomplete";
@@ -48,7 +57,7 @@ interface ResponsesAPILifecycleEvent extends ResponsesAPIEvent {
 /** A newly added Responses API output item. */
 interface ResponsesAPIOutputItemAddedEvent extends ResponsesAPIEvent {
   type: "response.output_item.added";
-  item: { type: "message" | "reasoning"; [key: string]: unknown };
+  item: ResponsesAPIEvent;
   [key: string]: unknown;
 }
 /** A newly added Responses API message content part. */
@@ -67,6 +76,13 @@ interface ResponsesAPIOutputTextDeltaEvent extends ResponsesAPIEvent {
 interface ResponsesAPIReasoningSummaryTextDeltaEvent extends ResponsesAPIEvent {
   type: "response.reasoning_summary_text.delta";
   delta: string;
+  [key: string]: unknown;
+}
+/** An incremental Responses API function-call arguments event. */
+interface ResponsesAPIFunctionCallArgumentsDeltaEvent extends ResponsesAPIEvent {
+  type: "response.function_call_arguments.delta";
+  delta: string;
+  output_index: number;
   [key: string]: unknown;
 }
 /** A JSON event emitted by a Responses API-compatible endpoint. */
@@ -90,7 +106,7 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
    * @param event Provider-specific streaming event.
    * @returns A normalized event, or undefined when the source event is unsupported.
    */
-  public fromEvent(event: ResponsesAPISourceEvent): ResponseEvent | undefined {
+  public fromEvent(event: ResponsesAPISourceEvent, response?: Response): ResponseEvent | undefined {
     if (event === "[DONE]") return undefined;
     switch (event.type) {
       case "response.created":
@@ -99,9 +115,7 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
       case "response.incomplete":
         return this.fromLifecycleEvent(event as ResponsesAPILifecycleEvent);
       case "response.output_item.added":
-        return (event as ResponsesAPIOutputItemAddedEvent).item.type === "message"
-          ? { type: "response.message_text.delta", delta: "" }
-          : { type: "response.reasoning_summary_text.delta", delta: "" };
+        return this.fromOutputItemAdded(event as ResponsesAPIOutputItemAddedEvent);
       case "response.content_part.added": {
         const partType = (event as ResponsesAPIContentPartAddedEvent).part.type;
         return partType === "output_text"
@@ -117,10 +131,60 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
           type: "response.reasoning_summary_text.delta",
           delta: (event as ResponsesAPIReasoningSummaryTextDeltaEvent).delta,
         };
+      case "response.function_call_arguments.delta":
+        return this.fromFunctionCallArgumentsDelta(
+          event as ResponsesAPIFunctionCallArgumentsDeltaEvent,
+          response,
+        );
       default:
         console.log(event);
         return undefined;
     }
+  }
+
+  /**
+   * Converts an upstream output index to the normalized function-call index.
+   * @param event Upstream function-call arguments fragment.
+   * @param response Response accumulated before the fragment.
+   * @returns A normalized function-call arguments delta event.
+   */
+  private fromFunctionCallArgumentsDelta(
+    event: ResponsesAPIFunctionCallArgumentsDeltaEvent,
+    response: Response | undefined,
+  ): ResponseEvent {
+    if (response === undefined) {
+      throw new Error("Responses API emitted function-call arguments before response.created");
+    }
+    const index = response.output
+      .slice(0, event.output_index + 1)
+      .filter((item) => item.type === "function_call")
+      .length - 1;
+    return { type: "response.function_call_arguments.delta", delta: event.delta, index };
+  }
+
+  /**
+   * Converts a newly selected output item into its normalized initialization event.
+   * @param event Upstream output-item-added event.
+   * @returns A normalized initialization event, or undefined for an unsupported output item.
+   */
+  private fromOutputItemAdded(event: ResponsesAPIOutputItemAddedEvent): ResponseEvent | undefined {
+    if (event.item.type === "message") return { type: "response.message_text.delta", delta: "" };
+    if (event.item.type === "reasoning") return { type: "response.reasoning_summary_text.delta", delta: "" };
+    if (event.item.type !== "function_call") {
+      console.log(event);
+      return undefined;
+    }
+    const item = event.item as ResponsesAPIFunctionCallItem;
+    return {
+      type: "response.function_call.added",
+      function_call: {
+        id: item.id,
+        type: "function_call",
+        call_id: item.call_id,
+        name: item.name,
+        arguments: item.arguments ?? "",
+      },
+    };
   }
 
   /**
@@ -147,6 +211,15 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
    * @returns A normalized response output item.
    */
   private fromOutputItem(item: ResponsesAPIOutputItem): ResponseOutputItem {
+    if (item.type === "function_call") {
+      return {
+        id: item.id,
+        type: "function_call",
+        call_id: item.call_id,
+        name: item.name,
+        arguments: item.arguments ?? "",
+      };
+    }
     if (item.type === "reasoning") {
       return {
         id: item.id,

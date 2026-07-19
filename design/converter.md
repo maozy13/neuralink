@@ -44,8 +44,9 @@ class Converter~RequestParams, SourceEvent~ {
 | 属性 | 类型 | 说明 |
 | -- | -- | -- |
 | model | string | 模型 ID |
-| input | string \| Array<InputParam> | 调用模型时的输入 |
+| input | string \| Array\<InputParam\> | 调用模型时的输入 |
 | instructions | string | 系统提示词 |
+| tools | Array\<Tool\> | 工具定义列表 |
 
 `RequestParams`
 

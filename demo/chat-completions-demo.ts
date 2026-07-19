@@ -1,4 +1,10 @@
-import { ChatCompletionsConverter, Connector } from "neuralink";
+import {
+  ChatCompletionsConverter,
+  Connector,
+  type FunctionCallOutput,
+  type Response,
+  type ResponseFunctionCall,
+} from "neuralink";
 
 /** Minimal Node.js runtime values required by this demo. */
 interface DemoRuntime { process?: { env: Record<string, string | undefined>; exitCode?: number } }
@@ -18,7 +24,33 @@ async function main(): Promise<void> {
     apiKey,
     new ChatCompletionsConverter(),
   );
-  const iterator = connector.call("doubao-seed-evolving", "请用一句话介绍你自己。");
+  const prompt = "请并行调用两个天气工具，分别查询上海和北京天气，然后汇总回答。";
+  const tools = createWeatherTools();
+  const firstResponse = await consume(connector.call("doubao-seed-evolving", prompt, { tools }));
+  const functionCalls = firstResponse.output.filter(
+    (item): item is ResponseFunctionCall => item.type === "function_call",
+  );
+  if (functionCalls.length !== 2) throw new Error(`预期两个天气工具调用，实际收到 ${functionCalls.length} 个`);
+  const functionOutputs = functionCalls.map((call): FunctionCallOutput => ({
+    type: "function_call_output", call_id: call.call_id, output: JSON.stringify(getWeather(call.name)),
+  }));
+  const finalResponse = await consume(connector.call("doubao-seed-evolving", [
+    { type: "message", role: "user", content: { type: "input_text", text: prompt } },
+    ...functionCalls,
+    ...functionOutputs,
+  ], { tools }));
+  console.log("\nChat Completions 最终 Response:");
+  console.log(JSON.stringify(finalResponse, null, 2));
+}
+
+/**
+ * Consumes and prints one Chat Completions response stream.
+ * @param iterator Response stream to consume.
+ * @returns The accumulated normalized response.
+ */
+async function consume(
+  iterator: ReturnType<Connector<unknown, unknown>["call"]>,
+): Promise<Response> {
   let eventCount = 0;
   while (true) {
     const next = await iterator.next();
@@ -26,15 +58,40 @@ async function main(): Promise<void> {
       console.log(`\n完成，共收到 ${eventCount} 个规范化事件。`);
       console.log("Response:");
       console.log(JSON.stringify(next.value, null, 2));
-      return;
+      return next.value;
     }
     eventCount += 1;
     if ("delta" in next.value) {
       console.log(`${next.value.type}: ${JSON.stringify(next.value.delta)}`);
+    } else if (next.value.type === "response.function_call.added") {
+      console.log(`${next.value.type}: ${JSON.stringify(next.value.function_call)}`);
     } else {
       console.log(`${next.value.type}: ${JSON.stringify(next.value.response)}`);
     }
   }
+}
+
+/**
+ * Provides deterministic mock weather data for the requested city.
+ * @param name Name of the selected city-specific weather tool.
+ * @returns A simple weather query result.
+ */
+function getWeather(name: string): { city: string; weather: string; temperature: string } {
+  if (name === "get_shanghai_weather") return { city: "上海", weather: "多云", temperature: "28°C" };
+  if (name === "get_beijing_weather") return { city: "北京", weather: "晴", temperature: "26°C" };
+  throw new Error(`未知天气工具：${name}`);
+}
+
+/**
+ * Creates the two no-argument weather tools used by the parallel-call demo.
+ * @returns Shanghai and Beijing weather tool definitions.
+ */
+function createWeatherTools(): Array<{ type: "function"; name: string; description: string; parameters: Record<string, unknown> }> {
+  const parameters = { type: "object", properties: {}, additionalProperties: false };
+  return [
+    { type: "function", name: "get_shanghai_weather", description: "查询上海当前天气", parameters },
+    { type: "function", name: "get_beijing_weather", description: "查询北京当前天气", parameters },
+  ];
 }
 
 try {

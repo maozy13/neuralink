@@ -4,21 +4,23 @@ import { AnthropicConverter } from "./anthropic-converter.js";
 describe("AnthropicConverter", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("converts text input and instructions", () => {
+  it("converts text input, instructions, and tools", () => {
     expect(new AnthropicConverter().toAPI({
       model: "claude-test",
       input: "Hello",
       instructions: "Be concise",
+      tools: [{ type: "function", name: "weather", description: "Weather", parameters: { type: "object" } }],
     })).toEqual({
       model: "claude-test",
       messages: [{ role: "user", content: "Hello" }],
       max_tokens: 4096,
       stream: true,
       system: "Be concise",
+      tools: [{ name: "weather", description: "Weather", input_schema: { type: "object" } }],
     });
   });
 
-  it("converts structured messages and skips function items", () => {
+  it("converts structured messages and groups parallel tool blocks", () => {
     expect(new AnthropicConverter().toAPI({
       model: "claude-test",
       input: [
@@ -26,7 +28,10 @@ describe("AnthropicConverter", () => {
         { type: "message", role: "developer", content: { type: "input_text", text: "Developer" } },
         { type: "message", role: "user", content: { type: "input_text", text: "Question" } },
         { type: "message", role: "assistant", content: { type: "input_text", text: "Answer" } },
-        { type: "function_call_output", call_id: "call", output: "result" },
+        { type: "function_call", call_id: "a", name: "first", arguments: "{}" },
+        { type: "function_call", call_id: "b", name: "second", arguments: "{\"x\":1}" },
+        { type: "function_call_output", call_id: "a", output: "result-a" },
+        { type: "function_call_output", call_id: "b", output: "result-b" },
       ],
       instructions: "Instructions",
     })).toEqual({
@@ -34,6 +39,14 @@ describe("AnthropicConverter", () => {
       messages: [
         { role: "user", content: "Question" },
         { role: "assistant", content: "Answer" },
+        { role: "assistant", content: [
+          { type: "tool_use", id: "a", name: "first", input: {} },
+          { type: "tool_use", id: "b", name: "second", input: { x: 1 } },
+        ] },
+        { role: "user", content: [
+          { type: "tool_result", tool_use_id: "a", content: "result-a" },
+          { type: "tool_result", tool_use_id: "b", content: "result-b" },
+        ] },
       ],
       max_tokens: 4096,
       stream: true,
@@ -97,6 +110,35 @@ describe("AnthropicConverter", () => {
       index: 0,
       delta,
     }, undefined)).toEqual(expected);
+  });
+
+  it("maps tool-use starts and indexed JSON argument deltas", () => {
+    const converter = new AnthropicConverter();
+    expect(converter.fromEvent({
+      type: "content_block_start", index: 1,
+      content_block: { type: "tool_use", id: "call", name: "weather", input: {} },
+    }, undefined)).toEqual({
+      type: "response.function_call.added",
+      function_call: { id: "call", type: "function_call", call_id: "call", name: "weather", arguments: "" },
+    });
+    expect(converter.fromEvent({
+      type: "content_block_start", index: 0, content_block: { type: "text", text: "" },
+    }, undefined)).toBeUndefined();
+    const response = {
+      id: "r", created_at: 1, status: "in_progress" as const,
+      output: [
+        { type: "reasoning" as const, content: { type: "reasoning_text" as const, text: "" }, summary: { type: "summary_text" as const, text: "" } },
+        { id: "call", type: "function_call" as const, call_id: "call", name: "weather", arguments: "" },
+      ],
+    };
+    expect(converter.fromEvent({
+      type: "content_block_delta", index: 1,
+      delta: { type: "input_json_delta", partial_json: "{}" },
+    }, response)).toEqual({ type: "response.function_call_arguments.delta", delta: "{}", index: 0 });
+    expect(() => converter.fromEvent({
+      type: "content_block_delta", index: 0,
+      delta: { type: "input_json_delta", partial_json: "{}" },
+    }, undefined)).toThrow("before response.created");
   });
 
   it("maps message_stop", () => {

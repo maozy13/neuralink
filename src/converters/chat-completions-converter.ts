@@ -4,21 +4,44 @@ import type {
   NormalizedParams,
   Response,
   ResponseEvent,
+  Tool,
 } from "../typings/index.js";
 
+/** A Chat Completions function call included in an assistant request message. */
+interface ChatCompletionsRequestToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
 /** A Chat Completions request message. */
-interface ChatCompletionsMessage { role: string; content: string }
+type ChatCompletionsMessage =
+  | { role: "user" | "assistant" | "developer" | "system"; content: string; tool_calls?: ChatCompletionsRequestToolCall[] }
+  | { role: "tool"; tool_call_id: string; content: string };
+/** A Chat Completions function tool definition. */
+interface ChatCompletionsTool {
+  type: "function";
+  function: { name: string; description: string; parameters: Record<string, unknown> };
+}
 /** Request body accepted by a Chat Completions-compatible endpoint. */
 interface ChatCompletionsRequest {
   model: string;
   messages: ChatCompletionsMessage[];
+  tools?: ChatCompletionsTool[];
   stream: true;
+}
+/** An incremental function call returned inside a Chat Completions choice. */
+interface ChatCompletionsToolCallDelta {
+  index: number;
+  id?: string;
+  type?: "function";
+  function: { name?: string; arguments?: string };
 }
 /** Incremental content returned for one Chat Completions choice. */
 interface ChatCompletionsDelta {
   role?: string;
   content?: string;
   reasoning_content?: string;
+  tool_calls?: ChatCompletionsToolCallDelta[];
 }
 /** One choice in a Chat Completions streaming chunk. */
 interface ChatCompletionsChoice { index: number; delta: ChatCompletionsDelta }
@@ -42,7 +65,9 @@ export class ChatCompletionsConverter implements Converter<ChatCompletionsReques
   public toAPI(params: NormalizedParams): ChatCompletionsRequest {
     const messages = this.toMessages(params.input);
     if (params.instructions !== undefined) messages.unshift({ role: "system", content: params.instructions });
-    return { model: params.model, messages, stream: true };
+    const request: ChatCompletionsRequest = { model: params.model, messages, stream: true };
+    if (params.tools !== undefined) request.tools = params.tools.map((tool) => this.toTool(tool));
+    return request;
   }
 
   /**
@@ -65,7 +90,8 @@ export class ChatCompletionsConverter implements Converter<ChatCompletionsReques
     }
     const delta = event.choices[0]?.delta;
     if (delta?.reasoning_content !== undefined) events.push(this.fromReasoning(delta.reasoning_content));
-    if (delta?.content !== undefined) events.push(this.fromContent(delta.content));
+    if (delta?.content !== undefined && delta.tool_calls === undefined) events.push(this.fromContent(delta.content));
+    for (const toolCall of delta?.tool_calls ?? []) events.push(this.fromToolCall(toolCall));
     if (events.length > 0) return events;
     console.log(event);
     return undefined;
@@ -78,9 +104,41 @@ export class ChatCompletionsConverter implements Converter<ChatCompletionsReques
    */
   private toMessages(input: string | InputItem[]): ChatCompletionsMessage[] {
     if (typeof input === "string") return [{ role: "user", content: input }];
-    return input.flatMap((item) => item.type === "message"
-      ? [{ role: item.role, content: item.content.type === "input_text" ? item.content.text : this.unsupportedContent(item.content.type) }]
-      : []);
+    const messages: ChatCompletionsMessage[] = [];
+    for (const item of input) {
+      if (item.type === "message") {
+        messages.push({
+          role: item.role,
+          content: item.content.type === "input_text" ? item.content.text : this.unsupportedContent(item.content.type),
+        });
+        continue;
+      }
+      if (item.type === "function_call_output") {
+        messages.push({ role: "tool", tool_call_id: item.call_id, content: item.output });
+        continue;
+      }
+      const previous = messages.at(-1);
+      const toolCall = {
+        id: item.call_id,
+        type: "function" as const,
+        function: { name: item.name, arguments: item.arguments },
+      };
+      if (previous?.role === "assistant" && previous.tool_calls !== undefined) previous.tool_calls.push(toolCall);
+      else messages.push({ role: "assistant", content: "", tool_calls: [toolCall] });
+    }
+    return messages;
+  }
+
+  /**
+   * Converts a normalized function tool to the nested Chat Completions shape.
+   * @param tool Normalized function tool definition.
+   * @returns Chat Completions function tool definition.
+   */
+  private toTool(tool: Tool): ChatCompletionsTool {
+    return {
+      type: "function",
+      function: { name: tool.name, description: tool.description, parameters: tool.parameters },
+    };
   }
 
   /**
@@ -108,5 +166,30 @@ export class ChatCompletionsConverter implements Converter<ChatCompletionsReques
    */
   private fromContent(text: string): ResponseEvent {
     return { type: "response.message_text.delta", delta: text };
+  }
+
+  /**
+   * Converts a streaming Chat Completions tool-call fragment.
+   * @param toolCall Incremental provider tool call.
+   * @returns A function-call initialization or arguments delta event.
+   */
+  private fromToolCall(toolCall: ChatCompletionsToolCallDelta): ResponseEvent {
+    if (toolCall.id === undefined) {
+      return {
+        type: "response.function_call_arguments.delta",
+        delta: toolCall.function.arguments ?? "",
+        index: toolCall.index,
+      };
+    }
+    return {
+      type: "response.function_call.added",
+      function_call: {
+        id: toolCall.id,
+        type: "function_call",
+        call_id: toolCall.id,
+        name: toolCall.function.name ?? "",
+        arguments: "",
+      },
+    };
   }
 }

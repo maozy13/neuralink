@@ -34,6 +34,9 @@ describe("Connector", () => {
       { type: "response.reasoning_summary_text.delta", delta: "think" },
       { type: "response.output_item.added", item: { type: "message" } },
       { type: "response.output_text.delta", delta: "hello" },
+      { type: "response.output_item.added", output_index: 2, item: { id: "fc", type: "function_call", call_id: "call", name: "weather" } },
+      { type: "response.function_call_arguments.delta", output_index: 2, delta: "{\"city\":" },
+      { type: "response.function_call_arguments.delta", output_index: 2, delta: "\"北京\"}" },
       { type: "response.completed", response: { id: "r", created_at: 1, status: "completed", output: [] } },
     ];
     const fetchMock = vi.fn().mockResolvedValue(sse([blocks(source), "data: [DONE]\n\n"]));
@@ -44,12 +47,13 @@ describe("Connector", () => {
       yielded.push(next.value);
       next = await iterator.next();
     }
-    expect(yielded).toHaveLength(6);
+    expect(yielded).toHaveLength(9);
     expect(next.value).toEqual({
       id: "r", created_at: 1, status: "completed",
       output: [
         { type: "reasoning", content: { type: "reasoning_text", text: "" }, summary: { type: "summary_text", text: "think" } },
         { type: "message", role: "assistant", content: { type: "output_text", text: "hello" } },
+        { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "{\"city\":\"北京\"}" },
       ],
     });
     expect(fetchMock).toHaveBeenCalledWith("url", expect.objectContaining({
@@ -85,9 +89,37 @@ describe("Connector", () => {
     [{ type: "response.reasoning_summary_text.delta", delta: "x" }, "reasoning-summary delta"],
     [{ type: "response.completed", response: { id: "r", created_at: 1 } }, "response.completed"],
     [{ type: "response.incomplete", response: { id: "r", created_at: 1 } }, "response.incomplete"],
+    [{ type: "response.output_item.added", item: { id: "fc", type: "function_call", call_id: "call", name: "weather" } }, "response.function_call.added"],
+    [{ type: "response.function_call_arguments.delta", output_index: 0, delta: "{}" }, "before response.created"],
   ])("rejects %j before creation", async (event, message) => {
     const call = new Connector("url", "key", new ResponsesAPIConverter(), { fetch: vi.fn().mockResolvedValue(sse([blocks([event])])) }).call("m", "x");
     await expect(Array.fromAsync(call)).rejects.toThrow(message);
+  });
+
+  it("rejects function arguments when no function call has been added", async () => {
+    const source = [
+      { type: "response.created", response: { id: "r", created_at: 1 } },
+      { type: "response.function_call_arguments.delta", output_index: 0, delta: "{}" },
+    ];
+    const call = new Connector("url", "key", new ResponsesAPIConverter(), {
+      fetch: vi.fn().mockResolvedValue(sse([blocks(source)])),
+    }).call("m", "x");
+    await expect(Array.fromAsync(call)).rejects.toThrow("unknown function call index -1");
+  });
+
+  it("routes parallel function arguments by normalized function index", async () => {
+    const source = [
+      { type: "response.created", response: { id: "r", created_at: 1 } },
+      { type: "response.output_item.added", output_index: 0, item: { id: "a", type: "function_call", call_id: "a", name: "first" } },
+      { type: "response.output_item.added", output_index: 1, item: { id: "b", type: "function_call", call_id: "b", name: "second" } },
+      { type: "response.function_call_arguments.delta", output_index: 1, delta: "B" },
+      { type: "response.function_call_arguments.delta", output_index: 0, delta: "A" },
+    ];
+    const iterator = new Connector("url", "key", new ResponsesAPIConverter(), {
+      fetch: vi.fn().mockResolvedValue(sse([blocks(source)])),
+    }).call("m", "x");
+    for (let index = 0; index < source.length; index += 1) await iterator.next();
+    expect((await iterator.next()).value.output).toMatchObject([{ arguments: "A" }, { arguments: "B" }]);
   });
 
   it("rejects mixed text and refusal deltas", async () => {

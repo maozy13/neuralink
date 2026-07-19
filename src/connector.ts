@@ -62,6 +62,20 @@ const responseEventHandlers = {
     item.summary.text += event.delta;
     return result;
   },
+  "response.function_call.added": (event, result) => {
+    const response = requireResponse(result, "response.function_call.added");
+    response.output.push(event.function_call);
+    return response;
+  },
+  "response.function_call_arguments.delta": (event, result) => {
+    const response = requireResponse(result, "response.function_call_arguments.delta");
+    const item = response.output.filter((outputItem) => outputItem.type === "function_call")[event.index];
+    if (item === undefined) {
+      throw new Error(`Model API emitted arguments for unknown function call index ${event.index}`);
+    }
+    item.arguments += event.delta;
+    return response;
+  },
 } satisfies ResponseEventHandlerMap;
 
 /**

@@ -2,7 +2,11 @@
 
 ResponsesAPIConverter 负责在 Connector 和 Response API 风格的接口之间进行请求/响应的转换。
 
-## 概述
+## toAPI(params: NormalizedParams) RequestParams
+
+暂时可以直接透传 NormalizedParams → RequestParams
+
+## fromEvent(event: SourceEvent, response: Response) ResponseEvent
 
 Response API 的事件会返回 `type` 属性用来标识不同的事件类型。根据不同的事件类型我们需要定义对应的映射算子，每个算子接收 SourceEvent 并返回规范化后的 ResponseEvent。
 
@@ -71,8 +75,8 @@ SourceEvent 示例：
 }
 ```
 
-- 如果 `item.part.type` 是 "output_text"，则映射到 ResponseMessageTextDelta 事件。
-- 如果 `item.part.type` 是 "output_refusal"，则映射到 ResponseMessageRefusalDelta 事件。
+- 如果 `part.type` 是 "output_text"，则映射到 ResponseMessageTextDelta 事件。
+- 如果 `part.type` 是 "output_refusal"，则映射到 ResponseMessageRefusalDelta 事件。
 
 ### `response.output_text.delta`
 
@@ -122,6 +126,42 @@ SourceEvent 示例：
 
 映射到 ResponseReasoningSummaryTextDelta 事件。
 
+### `response.output_item.added`
+
+SourceEvent 示例：
+
+```json
+{
+    "type": "response.output_item.added",
+    "output_index": 1,
+    "item": {
+        "call_id": "call_5dfhr165xjnmbx6qodwjky21",
+        "name": "get_weather",
+        "type": "function_call",
+        "id": "fc_02178442654569800000000000000000000ffffac15e3eeeaaec4",
+        "status": "in_progress"
+    },
+    "sequence_number": 38
+}
+```
+
+如果 `item.type == "function_call"` ，则映射到 ResponseFunctionCallAdded 事件；否则跳过。
+
+### `response.function_call_arguments.delta`
+
+SourceEvent 示例：
+
+```json
+{
+    "type": "response.function_call_arguments.delta",
+    "delta": "{\"city\": \"",
+    "item_id": "fc_02178442654569800000000000000000000ffffac15e3eeeaaec4",
+    "output_index": 1,
+    "sequence_number": 40
+}
+```
+
+映射到 ResponseFunctionCallArgumentsDelta 事件。
 
 ### `response.completed`
 
@@ -162,3 +202,5 @@ SourceEvent 示例：
 ```
 
 映射到 ResponseCompleted 事件。
+
+

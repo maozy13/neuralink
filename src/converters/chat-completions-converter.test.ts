@@ -3,13 +3,25 @@ import { ChatCompletionsConverter } from "./chat-completions-converter.js";
 
 describe("ChatCompletionsConverter", () => {
   it("converts requests", () => {
-    expect(new ChatCompletionsConverter().toAPI({ model: "m", input: "hi", instructions: "brief" })).toEqual({
-      model: "m", messages: [{ role: "system", content: "brief" }, { role: "user", content: "hi" }], stream: true,
+    const tools = [{ type: "function" as const, name: "weather", description: "Weather", parameters: { type: "object" } }];
+    expect(new ChatCompletionsConverter().toAPI({ model: "m", input: "hi", instructions: "brief", tools })).toEqual({
+      model: "m", messages: [{ role: "system", content: "brief" }, { role: "user", content: "hi" }],
+      tools: [{ type: "function", function: { name: "weather", description: "Weather", parameters: { type: "object" } } }],
+      stream: true,
     });
     expect(new ChatCompletionsConverter().toAPI({ model: "m", input: [
       { type: "message", role: "assistant", content: { type: "input_text", text: "ok" } },
+      { type: "function_call", call_id: "c", name: "weather", arguments: "{}" },
+      { type: "function_call", call_id: "d", name: "weather", arguments: "{}" },
       { type: "function_call_output", call_id: "c", output: "x" },
-    ] }).messages).toEqual([{ role: "assistant", content: "ok" }]);
+    ] }).messages).toEqual([
+      { role: "assistant", content: "ok" },
+      { role: "assistant", content: "", tool_calls: [
+        { id: "c", type: "function", function: { name: "weather", arguments: "{}" } },
+        { id: "d", type: "function", function: { name: "weather", arguments: "{}" } },
+      ] },
+      { role: "tool", tool_call_id: "c", content: "x" },
+    ]);
   });
 
   it.each(["input_image", "input_file"] as const)("rejects %s", (type) => {
@@ -26,6 +38,27 @@ describe("ChatCompletionsConverter", () => {
     ]);
     expect(converter.fromEvent({ id: "r", created: 1, choices: [{ index: 0, delta: { content: "" } }] }, { id: "r", created_at: 1, status: "in_progress", output: [] })).toEqual([
       { type: "response.message_text.delta", delta: "" },
+    ]);
+  });
+
+  it("maps tool call initialization and argument fragments", () => {
+    const converter = new ChatCompletionsConverter();
+    expect(converter.fromEvent({
+      id: "r", created: 1, choices: [{ index: 0, delta: { content: "", tool_calls: [{
+        index: 0, id: "call", type: "function", function: { name: "weather", arguments: "" },
+      }] } }],
+    }, undefined)).toEqual([
+      { type: "response.created", response: { id: "r", created_at: 1, status: "in_progress", output: [] } },
+      { type: "response.function_call.added", function_call: { id: "call", type: "function_call", call_id: "call", name: "weather", arguments: "" } },
+    ]);
+    expect(converter.fromEvent({
+      id: "r", created: 1, choices: [{ index: 0, delta: { tool_calls: [
+        { index: 0, function: { arguments: "{\"city\":" } },
+        { index: 0, function: {} },
+      ] } }],
+    }, { id: "r", created_at: 1, status: "in_progress", output: [] })).toEqual([
+      { type: "response.function_call_arguments.delta", delta: "{\"city\":" , index: 0 },
+      { type: "response.function_call_arguments.delta", delta: "", index: 0 },
     ]);
   });
 

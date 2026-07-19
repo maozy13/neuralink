@@ -37,7 +37,7 @@ class Connector {
 
 ## 类型 
 
-`InputItem`
+### InputItem
 
 InputItem 是 Connector 接收的规范化的模型输入，可以是以下结构的任意一种：
 
@@ -54,8 +54,9 @@ InputItem 是 Connector 接收的规范化的模型输入，可以是以下结�
 | 属性 | 类型 | 说明 |
 | -- | -- | -- |
 | instructions | string | 系统提示词 |
+| tools | Array\<Tool\> | 工具定义列表 |
 
-`Message`
+### Message
 
 消息对象参数。
 
@@ -72,7 +73,7 @@ InputItem 是 Connector 接收的规范化的模型输入，可以是以下结�
 | type | "message" | input 的类型，固定为 "message" |
 | content | TextMessage \| ImageMessage \| FileMessage | 消息的类型 |
 
-`FunctionCall`
+### FunctionCall
 
 函数调用执行。
 
@@ -85,7 +86,7 @@ InputItem 是 Connector 接收的规范化的模型输入，可以是以下结�
 | name | string | 模型选择的要执行的函数的名称 |
 | arguments | string | 模型生成的函数执行参数，JSON 字符串格式 |
 
-`FunctionCallOutput`
+### FunctionCallOutput
 
 函数调用结果。
 
@@ -97,7 +98,7 @@ InputItem 是 Connector 接收的规范化的模型输入，可以是以下结�
 | call_id | string | 模型生成的函数调用执行的 ID，用于关联函数调用执行和函数调用结果 |
 | output | string | 函数执行的结果 |
 
-`TextMessage` 
+### TextMessage
 
 文本消息。
 
@@ -108,7 +109,7 @@ InputItem 是 Connector 接收的规范化的模型输入，可以是以下结�
 | type | "input_text" | 消息类型，固定为 "input_text" |
 | text | string | 文本内容 |
 
-`ImageMessage` 
+### ImageMessage
 
 图片消息。
 
@@ -119,7 +120,7 @@ InputItem 是 Connector 接收的规范化的模型输入，可以是以下结�
 | type | "input_image" | 消息类型，固定为 "input_image" |
 | image_url | uri | 图片的 URI 地址 |
 
-`FileMessage` 
+### FileMessage
 
 文件消息。
 
@@ -130,6 +131,28 @@ InputItem 是 Connector 接收的规范化的模型输入，可以是以下结�
 | type | "input_file" | 消息类型，固定为 "input_file" |
 | file_url | uri | 文件的 URI 地址 |
 
-`Response`
+### Tool
+
+Tool 表示工具的定义，可以是以下结构的一种：
+
+- Function
+- WebSearch
+
+### Function
+
+自定义函数。
+
+| 属性 | 类型 | 说明 |
+| -- | -- | -- |
+| type | "function" | 工具类型，固定为 "function" |
+| name | string | 函数名称 |
+| description | string | 函数描述 |
+| parameters | object | 函数参数，使用 JSON Schema 表示 |
+
+### WebSearch
+
+联网搜索工具。（暂不实现）
+
+### Response
 
 增量累积后的响应对象。参考：[response.md](response.md)

@@ -5,7 +5,8 @@ describe("ResponsesAPIConverter", () => {
   const converter = new ResponsesAPIConverter();
 
   it("enables streaming", () => {
-    expect(converter.toAPI({ model: "model", input: "hello" })).toEqual({ model: "model", input: "hello", stream: true });
+    const tools = [{ type: "function" as const, name: "weather", description: "Weather", parameters: { type: "object" } }];
+    expect(converter.toAPI({ model: "model", input: "hello", tools })).toEqual({ model: "model", input: "hello", tools, stream: true });
   });
 
   it.each([
@@ -38,6 +39,7 @@ describe("ResponsesAPIConverter", () => {
           { id: "rs", type: "reasoning", content: [{ type: "reasoning_text", text: "Details" }], summary: [{ type: "summary_text", text: "Think" }] },
           { id: "msg", type: "message", role: "assistant", content: [{ type: "output_text", text: "Hello" }] },
           { id: "ref", type: "message", role: "assistant", content: [{ type: "refusal", refusal: "No" }] },
+          { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "{\"city\":\"北京\"}" },
         ],
       },
     })).toEqual({
@@ -48,6 +50,7 @@ describe("ResponsesAPIConverter", () => {
           { id: "rs", type: "reasoning", content: { type: "reasoning_text", text: "Details" }, summary: { type: "summary_text", text: "Think" } },
           { id: "msg", type: "message", role: "assistant", content: { type: "output_text", text: "Hello" } },
           { id: "ref", type: "message", role: "assistant", content: { type: "refusal", refusal: "No" } },
+          { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "{\"city\":\"北京\"}" },
         ],
       },
     });
@@ -59,16 +62,20 @@ describe("ResponsesAPIConverter", () => {
       response: { id: "r", created_at: 1, output: [
         { id: "rs", type: "reasoning" },
         { id: "msg", type: "message", role: "assistant", content: [] },
+        { id: "fc", type: "function_call", call_id: "call", name: "weather" },
       ] },
     })).toMatchObject({ response: { output: [
       { content: { type: "reasoning_text", text: "" }, summary: { type: "summary_text", text: "" } },
       { content: { type: "output_text", text: "" } },
+      { arguments: "" },
     ] } });
   });
 
   it.each([
     [{ type: "response.output_item.added", item: { type: "message" } }, { type: "response.message_text.delta", delta: "" }],
     [{ type: "response.output_item.added", item: { type: "reasoning" } }, { type: "response.reasoning_summary_text.delta", delta: "" }],
+    [{ type: "response.output_item.added", item: { id: "fc", type: "function_call", call_id: "call", name: "weather" } }, { type: "response.function_call.added", function_call: { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "" } }],
+    [{ type: "response.output_item.added", item: { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "{}" } }, { type: "response.function_call.added", function_call: { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "{}" } }],
     [{ type: "response.content_part.added", part: { type: "output_text" } }, { type: "response.message_text.delta", delta: "" }],
     [{ type: "response.content_part.added", part: { type: "output_refusal" } }, { type: "response.message_refusal.delta", delta: "" }],
     [{ type: "response.content_part.added", part: { type: "refusal" } }, { type: "response.message_refusal.delta", delta: "" }],
@@ -79,11 +86,34 @@ describe("ResponsesAPIConverter", () => {
     expect(converter.fromEvent(source)).toEqual(normalized);
   });
 
+  it("maps Responses API output indexes to function-call indexes", () => {
+    const response = {
+      id: "r", created_at: 1, status: "in_progress" as const,
+      output: [
+        { type: "reasoning" as const, content: { type: "reasoning_text" as const, text: "" }, summary: { type: "summary_text" as const, text: "" } },
+        { id: "fc", type: "function_call" as const, call_id: "call", name: "weather", arguments: "" },
+      ],
+    };
+    expect(converter.fromEvent({
+      type: "response.function_call_arguments.delta", delta: "{\"city\":", output_index: 1,
+    }, response)).toEqual({ type: "response.function_call_arguments.delta", delta: "{\"city\":", index: 0 });
+    expect(() => converter.fromEvent({
+      type: "response.function_call_arguments.delta", delta: "{}", output_index: 0,
+    })).toThrow("before response.created");
+  });
+
   it("prints and ignores unsupported events", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const source = { type: "response.in_progress", sequence_number: 1 };
+    const unsupportedOutput = {
+      type: "response.output_item.added",
+      output_index: 0,
+      item: { type: "web_search_call", id: "ws_1" },
+    };
     expect(converter.fromEvent(source)).toBeUndefined();
+    expect(converter.fromEvent(unsupportedOutput)).toBeUndefined();
     expect(log).toHaveBeenCalledWith(source);
+    expect(log).toHaveBeenCalledWith(unsupportedOutput);
     log.mockRestore();
   });
 
