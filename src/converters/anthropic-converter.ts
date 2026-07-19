@@ -7,13 +7,13 @@ import type {
 } from "../typings/index.js";
 
 /** A message accepted by an Anthropic-compatible endpoint. */
-export interface AnthropicMessage {
+interface AnthropicMessage {
   role: "user" | "assistant";
   content: string;
 }
 
 /** Request body accepted by an Anthropic-compatible endpoint. */
-export interface AnthropicRequest {
+interface AnthropicRequest {
   model: string;
   messages: AnthropicMessage[];
   max_tokens: number;
@@ -22,7 +22,7 @@ export interface AnthropicRequest {
 }
 
 /** A JSON event emitted by an Anthropic-compatible endpoint. */
-export interface AnthropicSourceEvent {
+interface AnthropicSourceEvent {
   type: string;
   [key: string]: unknown;
 }

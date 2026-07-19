@@ -7,30 +7,30 @@ import type {
 } from "../typings/index.js";
 
 /** A Chat Completions request message. */
-export interface ChatCompletionsMessage { role: string; content: string }
+interface ChatCompletionsMessage { role: string; content: string }
 /** Request body accepted by a Chat Completions-compatible endpoint. */
-export interface ChatCompletionsRequest {
+interface ChatCompletionsRequest {
   model: string;
   messages: ChatCompletionsMessage[];
   stream: true;
 }
 /** Incremental content returned for one Chat Completions choice. */
-export interface ChatCompletionsDelta {
+interface ChatCompletionsDelta {
   role?: string;
   content?: string;
   reasoning_content?: string;
 }
 /** One choice in a Chat Completions streaming chunk. */
-export interface ChatCompletionsChoice { index: number; delta: ChatCompletionsDelta }
+interface ChatCompletionsChoice { index: number; delta: ChatCompletionsDelta }
 /** Streaming chunk returned by a Chat Completions-compatible endpoint. */
-export interface ChatCompletionsChunk {
+interface ChatCompletionsChunk {
   id: string;
   created: number;
   choices: ChatCompletionsChoice[];
   [key: string]: unknown;
 }
 /** Source data accepted by ChatCompletionsConverter. */
-export type ChatCompletionsSourceEvent = ChatCompletionsChunk | "[DONE]";
+type ChatCompletionsSourceEvent = ChatCompletionsChunk | "[DONE]";
 
 /** Converts requests and streaming chunks for Chat Completions-compatible APIs. */
 export class ChatCompletionsConverter implements Converter<ChatCompletionsRequest, ChatCompletionsSourceEvent> {

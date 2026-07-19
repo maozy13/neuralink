@@ -8,7 +8,7 @@ import type {
 } from "../typings/index.js";
 
 /** Request body accepted by a Responses API-compatible endpoint. */
-export interface ResponsesAPIRequest extends NormalizedParams { stream: true }
+interface ResponsesAPIRequest extends NormalizedParams { stream: true }
 /** Minimal response object used while normalizing lifecycle events. */
 interface ResponsesAPIResponse {
   id: string;
@@ -72,7 +72,7 @@ interface ResponsesAPIReasoningSummaryTextDeltaEvent extends ResponsesAPIEvent {
 /** A JSON event emitted by a Responses API-compatible endpoint. */
 interface ResponsesAPIEvent { type: string; [key: string]: unknown }
 /** Every source value accepted by ResponsesAPIConverter. */
-export type ResponsesAPISourceEvent = ResponsesAPIEvent | "[DONE]";
+type ResponsesAPISourceEvent = ResponsesAPIEvent | "[DONE]";
 
 /** Converts requests and streaming events for Responses API-compatible endpoints. */
 export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, ResponsesAPISourceEvent> {
