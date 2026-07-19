@@ -122,15 +122,44 @@ describe("Connector", () => {
     expect((await iterator.next()).value.output).toMatchObject([{ arguments: "A" }, { arguments: "B" }]);
   });
 
-  it("rejects mixed text and refusal deltas", async () => {
+  it("accumulates text and refusal outputs independently", async () => {
     const prefix = { type: "response.created", response: { id: "r", created_at: 1 } };
     for (const events of [
       [prefix, { type: "response.output_text.delta", delta: "x" }, { type: "response.content_part.added", part: { type: "refusal" } }],
       [prefix, { type: "response.content_part.added", part: { type: "refusal" } }, { type: "response.output_text.delta", delta: "x" }],
     ]) {
       const call = new Connector("url", "key", new ResponsesAPIConverter(), { fetch: vi.fn().mockResolvedValue(sse([blocks(events)])) }).call("m", "x");
-      await expect(Array.fromAsync(call)).rejects.toThrow("mixed");
+      await expect(Array.fromAsync(call)).resolves.toHaveLength(3);
     }
+  });
+
+  it("accumulates repeated indexed content and rejects index gaps", async () => {
+    const converter = {
+      toAPI: (params: object): object => params,
+      fromEvent: (event: import("./typings/index.js").ResponseEvent): import("./typings/index.js").ResponseEvent => event,
+    };
+    const events = [
+      { type: "response.created", response: { id: "r", created_at: 1, status: "in_progress", output: [] } },
+      { type: "response.message_text.delta", index: 0, delta: "a" },
+      { type: "response.message_text.delta", index: 0, delta: "b" },
+      { type: "response.message_refusal.delta", index: 0, delta: "n" },
+      { type: "response.message_refusal.delta", index: 0, delta: "o" },
+      { type: "response.reasoning_summary_text.delta", index: 0, delta: "x" },
+      { type: "response.reasoning_summary_text.delta", index: 0, delta: "y" },
+    ];
+    const call = new Connector("url", "key", converter, {
+      fetch: vi.fn().mockResolvedValue(sse([blocks(events)])),
+    }).call("m", "x");
+    for (let index = 0; index < events.length; index += 1) await call.next();
+    expect((await call.next()).value.output).toMatchObject([
+      { content: { text: "ab" } }, { content: { refusal: "no" } }, { summary: { text: "xy" } },
+    ]);
+
+    const gapEvents = [events[0]!, { type: "response.message_text.delta", index: 1, delta: "gap" }];
+    const gapCall = new Connector("url", "key", converter, {
+      fetch: vi.fn().mockResolvedValue(sse([blocks(gapEvents)])),
+    }).call("m", "x");
+    await expect(Array.fromAsync(gapCall)).rejects.toThrow("unknown index 1");
   });
 
   it("parses split, CRLF, multiline and final SSE blocks", async () => {

@@ -6,7 +6,7 @@
 
 | 属性 | 类型 | 说明 |
 | -- | -- | -- |
-| id | string | 响应的 ID |
+| id | string | 响应的 ID，可选 |
 | created_at | number | 响应的创建时间 |
 | status | enum("completed", "failed", "in_progress", "cancelled", "queued", "incomplete") | 响应状态 |
 | output | Array\<OutputItem\> | 模型生成的输出项 |
@@ -129,15 +129,15 @@ ResponseEvent.response → Response.response
 
 ### ResponseMessageTextDelta
 
-将 ResponseEvent.delta 追加到 TextContent 的 `text` 文本后。
+根据 ResponseEvent.index 定位 TextContnt，将 ResponseEvent.delta 追加到 TextContent 的 `text` 文本后。
 
 ### ResponseMessageRefusalDelta
 
-将 ResponseEvent.delta 追加到 RefusalContent 的 `refusal` 文本后。
+根据 ResponseEvent.index 定位 RefusalContent，将 ResponseEvent.delta 追加到 RefusalContent 的 `refusal` 文本后。
 
 ### ResponseReasoningSummaryTextDelta
 
-将 ResponseEvent.delta 追加到 ReasoningSummary 的 `text` 文本后。
+根据 ResponseEvent.index 定位 ReasoningSummary，将 ResponseEvent.delta 追加到 ReasoningSummary 的 `text` 文本后。
 
 ### ResponseFunctionCallAdded
 
@@ -145,4 +145,4 @@ ResponseEvent.function_call → Response.function_call
 
 ### ResponseFunctionCallArgumentsDelta
 
-将 ResponseEvent.delta 追加到 Response.function_call.arguments 文本后。
+根据 ResponseEvent.index 定位 FunctionCall，将 ResponseEvent.delta 追加到 FunctionCall.arguments 文本后。

@@ -98,11 +98,11 @@ describe("AnthropicConverter", () => {
   it.each([
     [
       { type: "text_delta", text: "Hello" },
-      { type: "response.message_text.delta", delta: "Hello" },
+      { type: "response.message_text.delta", index: 0, delta: "Hello" },
     ],
     [
       { type: "thinking_delta", thinking: "Think" },
-      { type: "response.reasoning_summary_text.delta", delta: "Think" },
+      { type: "response.reasoning_summary_text.delta", index: 0, delta: "Think" },
     ],
   ] as const)("maps content delta %#", (delta, expected) => {
     expect(new AnthropicConverter().fromEvent({
@@ -124,6 +124,9 @@ describe("AnthropicConverter", () => {
     expect(converter.fromEvent({
       type: "content_block_start", index: 0, content_block: { type: "text", text: "" },
     }, undefined)).toBeUndefined();
+    expect(converter.fromEvent({
+      type: "content_block_start", index: 3, content_block: { type: "thinking", thinking: "" },
+    }, undefined)).toBeUndefined();
     const response = {
       id: "r", created_at: 1, status: "in_progress" as const,
       output: [
@@ -139,6 +142,12 @@ describe("AnthropicConverter", () => {
       type: "content_block_delta", index: 0,
       delta: { type: "input_json_delta", partial_json: "{}" },
     }, undefined)).toThrow("before response.created");
+    expect(converter.fromEvent({
+      type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "again" },
+    }, response)).toEqual({ type: "response.message_text.delta", index: 0, delta: "again" });
+    expect(converter.fromEvent({
+      type: "content_block_start", index: 2, content_block: { type: "tool_use" },
+    }, response)).toMatchObject({ function_call: { id: "", call_id: "", name: "" } });
   });
 
   it("maps message_stop", () => {

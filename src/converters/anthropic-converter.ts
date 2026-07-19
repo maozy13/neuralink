@@ -67,6 +67,8 @@ export class AnthropicConverter
 {
   /** Maximum output tokens used by the minimal normalized request. */
   private static readonly DEFAULT_MAX_TOKENS = 4096;
+  private readonly contentBlockIndexes = new Map<number, number>();
+  private readonly contentTypeCounts = new Map<"message" | "reasoning" | "function_call", number>();
 
   /**
    * Converts provider-neutral parameters to an Anthropic streaming request.
@@ -100,6 +102,8 @@ export class AnthropicConverter
     response: Response | undefined,
   ): ResponseEvent | undefined {
     if (event.type === "message_start") {
+      this.contentBlockIndexes.clear();
+      this.contentTypeCounts.clear();
       const startEvent = event as AnthropicMessageStartEvent;
       return {
         type: "response.created",
@@ -174,21 +178,20 @@ export class AnthropicConverter
     if (event.delta.type === "text_delta") {
       return {
         type: "response.message_text.delta",
+        index: this.blockIndex(event.index, "message"),
         delta: event.delta.text as string,
       };
     }
     if (event.delta.type === "thinking_delta") {
       return {
         type: "response.reasoning_summary_text.delta",
+        index: this.blockIndex(event.index, "reasoning"),
         delta: event.delta.thinking as string,
       };
     }
     if (event.delta.type === "input_json_delta") {
       if (response === undefined) throw new Error("Anthropic emitted tool arguments before response.created");
-      const index = response.output
-        .slice(0, event.index + 1)
-        .filter((item) => item.type === "function_call")
-        .length - 1;
+      const index = this.blockIndex(event.index, "function_call");
       return { type: "response.function_call_arguments.delta", delta: event.delta.partial_json as string, index };
     }
     console.log(event);
@@ -201,7 +204,16 @@ export class AnthropicConverter
    * @returns A normalized function-call event, or undefined for non-tool blocks.
    */
   private fromContentBlockStart(event: AnthropicContentBlockStartEvent): ResponseEvent | undefined {
+    if (event.content_block.type === "text") {
+      this.blockIndex(event.index, "message");
+      return undefined;
+    }
+    if (event.content_block.type === "thinking") {
+      this.blockIndex(event.index, "reasoning");
+      return undefined;
+    }
     if (event.content_block.type !== "tool_use") return undefined;
+    this.blockIndex(event.index, "function_call");
     return {
       type: "response.function_call.added",
       function_call: {
@@ -212,6 +224,21 @@ export class AnthropicConverter
         arguments: "",
       },
     };
+  }
+
+  /**
+   * Resolves an Anthropic content-block position to a same-type normalized index.
+   * @param blockIndex Upstream content-block index.
+   * @param type Normalized output type represented by the block.
+   * @returns Stable zero-based index among outputs of the same type.
+   */
+  private blockIndex(blockIndex: number, type: "message" | "reasoning" | "function_call"): number {
+    const existing = this.contentBlockIndexes.get(blockIndex);
+    if (existing !== undefined) return existing;
+    const index = this.contentTypeCounts.get(type) ?? 0;
+    this.contentBlockIndexes.set(blockIndex, index);
+    this.contentTypeCounts.set(type, index + 1);
+    return index;
   }
 
   /**

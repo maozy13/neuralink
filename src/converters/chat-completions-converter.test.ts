@@ -33,11 +33,11 @@ describe("ChatCompletionsConverter", () => {
     const converter = new ChatCompletionsConverter();
     expect(converter.fromEvent({ id: "r", created: 1, choices: [{ index: 0, delta: { content: "hello", reasoning_content: "think" } }] }, undefined)).toEqual([
       { type: "response.created", response: { id: "r", created_at: 1, status: "in_progress", output: [] } },
-      { type: "response.reasoning_summary_text.delta", delta: "think" },
-      { type: "response.message_text.delta", delta: "hello" },
+      { type: "response.reasoning_summary_text.delta", index: 0, delta: "think" },
+      { type: "response.message_text.delta", index: 0, delta: "hello" },
     ]);
     expect(converter.fromEvent({ id: "r", created: 1, choices: [{ index: 0, delta: { content: "" } }] }, { id: "r", created_at: 1, status: "in_progress", output: [] })).toEqual([
-      { type: "response.message_text.delta", delta: "" },
+      { type: "response.message_text.delta", index: 0, delta: "" },
     ]);
   });
 

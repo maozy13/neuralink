@@ -11,6 +11,7 @@ ResponseEvent 可以是下列结构中的一种：
 - ResponseFailed
 - ResponseIncomplete
 - ResponseMessageTextDelta
+- ResponseMessageRefusalDelta
 - ResponseReasoningSummaryTextDelta
 - ResponseFunctionCallAdded
 - ResponseFunctionCallArgumentsDelta
@@ -62,36 +63,39 @@ ResponseEvent 可以是下列结构中的一种：
 
 ### ResponseMessageTextDelta
 
-增量生成部分消息正文内容。
+增量生成正文消息。
 
 **属性：**
 
 | 属性 | 类型 | 说明 |
 | -- | -- | -- |
 | type | "response.message_text.delta" | 事件类型，固定为 "response.message_text.delta" |
-| delta | string | 增量的消息正文 |
+| index | number | 增量文本所属正文消息的索引，当模型输出多个正文消息时用于定位 |
+| delta | string | 正文消息增量文本 |
 
 ### ResponseMessageRefusalDelta
 
-增量生成部分消息正文内容。
+增量生成拒绝消息。
 
 **属性：**
 
 | 属性 | 类型 | 说明 |
 | -- | -- | -- |
 | type | "response.message_refusal.delta" | 事件类型，固定为 "response.message_refusal.delta" |
-| delta | string | 增量的消息正文 |
+| index | number | 增量文本所属拒绝消息的索引，当模型输出多个拒绝消息时用于定位 |
+| delta | string | 拒绝消息增量文本 |
 
 ### ResponseReasoningSummaryTextDelta
 
-增量生成部分推理摘要内容。
+增量生成推理摘要。
 
 **属性：**
 
 | 属性 | 类型 | 说明 |
 | -- | -- | -- |
 | type | "response.reasoning_summary_text.delta" | 事件类型，固定为 "response.reasoning_summary_text.delta" |
-| delta | string | 增量的推理摘要文本 |
+| index | number | 增量文本所属推理摘要的索引，当模型输出多个推理摘要时用于定位 |
+| delta | string | 推理摘要增量文本 |
 
 ### ResponseFunctionCallAdded
 
@@ -106,15 +110,15 @@ ResponseEvent 可以是下列结构中的一种：
 
 ### ResponseFunctionCallArgumentsDelta
 
-增量生成自定义函数调用参数。
+增量生成函数调用参数。
 
 **属性：**
 
 | 属性 | 类型 | 说明 |
 | -- | -- | -- |
 | type | "response.function_call_arguments.delta" | 事件类型，固定为 "response.function_call_arguments.delta" |
-| delta | string | 增量的函数调用参数 |
-| index | number | 增量参数所属的函数的下标，并行调用多函数时需要根据 index 确定参数增量到哪个函数 |
+| index | number | 增量文本所属的函数的索引，当模型输出多个函数时用于定位 |
+| delta | string | 函数调用参数增量文本 |
 
 ## 类型
 

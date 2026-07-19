@@ -88,9 +88,10 @@ export class ChatCompletionsConverter implements Converter<ChatCompletionsReques
         response: { id: event.id, created_at: event.created, status: "in_progress", output: [] },
       });
     }
-    const delta = event.choices[0]?.delta;
-    if (delta?.reasoning_content !== undefined) events.push(this.fromReasoning(delta.reasoning_content));
-    if (delta?.content !== undefined && delta.tool_calls === undefined) events.push(this.fromContent(delta.content));
+    const choice = event.choices[0];
+    const delta = choice?.delta;
+    if (delta?.reasoning_content !== undefined) events.push(this.fromReasoning(delta.reasoning_content, choice!.index));
+    if (delta?.content !== undefined && delta.tool_calls === undefined) events.push(this.fromContent(delta.content, choice!.index));
     for (const toolCall of delta?.tool_calls ?? []) events.push(this.fromToolCall(toolCall));
     if (events.length > 0) return events;
     console.log(event);
@@ -153,19 +154,21 @@ export class ChatCompletionsConverter implements Converter<ChatCompletionsReques
   /**
    * Converts reasoning text to an output-item or summary delta event.
    * @param text Incremental reasoning text.
+   * @param index Choice index identifying the normalized reasoning item.
    * @returns The normalized reasoning event.
    */
-  private fromReasoning(text: string): ResponseEvent {
-    return { type: "response.reasoning_summary_text.delta", delta: text };
+  private fromReasoning(text: string, index: number): ResponseEvent {
+    return { type: "response.reasoning_summary_text.delta", index, delta: text };
   }
 
   /**
    * Converts assistant text to an output-item or text delta event.
    * @param text Incremental assistant text.
+   * @param index Choice index identifying the normalized message.
    * @returns The normalized assistant event.
    */
-  private fromContent(text: string): ResponseEvent {
-    return { type: "response.message_text.delta", delta: text };
+  private fromContent(text: string, index: number): ResponseEvent {
+    return { type: "response.message_text.delta", index, delta: text };
   }
 
   /**

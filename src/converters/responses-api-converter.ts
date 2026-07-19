@@ -57,24 +57,28 @@ interface ResponsesAPILifecycleEvent extends ResponsesAPIEvent {
 /** A newly added Responses API output item. */
 interface ResponsesAPIOutputItemAddedEvent extends ResponsesAPIEvent {
   type: "response.output_item.added";
+  output_index?: number;
   item: ResponsesAPIEvent;
   [key: string]: unknown;
 }
 /** A newly added Responses API message content part. */
 interface ResponsesAPIContentPartAddedEvent extends ResponsesAPIEvent {
   type: "response.content_part.added";
+  output_index?: number;
   part: { type: "output_text" | "output_refusal" | "refusal"; [key: string]: unknown };
   [key: string]: unknown;
 }
 /** An incremental Responses API output-text event. */
 interface ResponsesAPIOutputTextDeltaEvent extends ResponsesAPIEvent {
   type: "response.output_text.delta";
+  output_index?: number;
   delta: string;
   [key: string]: unknown;
 }
 /** An incremental Responses API reasoning-summary event. */
 interface ResponsesAPIReasoningSummaryTextDeltaEvent extends ResponsesAPIEvent {
   type: "response.reasoning_summary_text.delta";
+  output_index?: number;
   delta: string;
   [key: string]: unknown;
 }
@@ -115,20 +119,30 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
       case "response.incomplete":
         return this.fromLifecycleEvent(event as ResponsesAPILifecycleEvent);
       case "response.output_item.added":
-        return this.fromOutputItemAdded(event as ResponsesAPIOutputItemAddedEvent);
+        return this.fromOutputItemAdded(event as ResponsesAPIOutputItemAddedEvent, response);
       case "response.content_part.added": {
-        const partType = (event as ResponsesAPIContentPartAddedEvent).part.type;
+        const partEvent = event as ResponsesAPIContentPartAddedEvent;
+        const partType = partEvent.part.type;
         return partType === "output_text"
-          ? { type: "response.message_text.delta", delta: "" }
-          : { type: "response.message_refusal.delta", delta: "" };
+          ? { type: "response.message_text.delta", index: this.existingContentIndex(response, "output_text", partEvent.output_index), delta: "" }
+          : { type: "response.message_refusal.delta", index: this.contentIndex(response, "refusal"), delta: "" };
       }
       case "response.output_text.delta":
-        return { type: "response.message_text.delta", delta: (event as ResponsesAPIOutputTextDeltaEvent).delta };
+        return {
+          type: "response.message_text.delta",
+          index: this.existingContentIndex(response, "output_text", (event as ResponsesAPIOutputTextDeltaEvent).output_index),
+          delta: (event as ResponsesAPIOutputTextDeltaEvent).delta,
+        };
       case "response.reasoning_summary_part.added":
-        return { type: "response.reasoning_summary_text.delta", delta: "" };
+        return {
+          type: "response.reasoning_summary_text.delta",
+          index: this.existingReasoningIndex(response, undefined),
+          delta: "",
+        };
       case "response.reasoning_summary_text.delta":
         return {
           type: "response.reasoning_summary_text.delta",
+          index: this.existingReasoningIndex(response, (event as ResponsesAPIReasoningSummaryTextDeltaEvent).output_index),
           delta: (event as ResponsesAPIReasoningSummaryTextDeltaEvent).delta,
         };
       case "response.function_call_arguments.delta":
@@ -167,9 +181,17 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
    * @param event Upstream output-item-added event.
    * @returns A normalized initialization event, or undefined for an unsupported output item.
    */
-  private fromOutputItemAdded(event: ResponsesAPIOutputItemAddedEvent): ResponseEvent | undefined {
-    if (event.item.type === "message") return { type: "response.message_text.delta", delta: "" };
-    if (event.item.type === "reasoning") return { type: "response.reasoning_summary_text.delta", delta: "" };
+  private fromOutputItemAdded(event: ResponsesAPIOutputItemAddedEvent, response: Response | undefined): ResponseEvent | undefined {
+    if (event.item.type === "message") {
+      return { type: "response.message_text.delta", index: this.contentIndex(response, "output_text"), delta: "" };
+    }
+    if (event.item.type === "reasoning") {
+      return {
+        type: "response.reasoning_summary_text.delta",
+        index: response?.output.filter((item) => item.type === "reasoning").length ?? 0,
+        delta: "",
+      };
+    }
     if (event.item.type !== "function_call") {
       console.log(event);
       return undefined;
@@ -185,6 +207,49 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
         arguments: item.arguments ?? "",
       },
     };
+  }
+
+  /**
+   * Returns the next index for a normalized message content type.
+   * @param response Response accumulated before the event.
+   * @param type Normalized message content type.
+   * @returns Next same-type message index.
+   */
+  private contentIndex(response: Response | undefined, type: "output_text" | "refusal"): number {
+    return response?.output.filter(
+      (item) => item.type === "message" && item.content.type === type,
+    ).length ?? 0;
+  }
+
+  /**
+   * Returns the existing normalized message-content index for an upstream output position.
+   * @param response Response accumulated before the event.
+   * @param type Normalized message content type.
+   * @param outputIndex Upstream all-output position, when available.
+   * @returns Existing same-type message index.
+   */
+  private existingContentIndex(
+    response: Response | undefined,
+    type: "output_text" | "refusal",
+    outputIndex: number | undefined,
+  ): number {
+    if (response === undefined) return 0;
+    const output = outputIndex === undefined ? response.output : response.output.slice(0, outputIndex + 1);
+    return Math.max(0, output.filter(
+      (item) => item.type === "message" && item.content.type === type,
+    ).length - 1);
+  }
+
+  /**
+   * Returns the existing normalized reasoning index for an upstream output position.
+   * @param response Response accumulated before the event.
+   * @param outputIndex Upstream all-output position, when available.
+   * @returns Existing reasoning index.
+   */
+  private existingReasoningIndex(response: Response | undefined, outputIndex: number | undefined): number {
+    if (response === undefined) return 0;
+    const output = outputIndex === undefined ? response.output : response.output.slice(0, outputIndex + 1);
+    return Math.max(0, output.filter((item) => item.type === "reasoning").length - 1);
   }
 
   /**

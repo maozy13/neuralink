@@ -39,6 +39,32 @@ SourceEvent 示例：
 
 ### `response.output_item.added`
 
+表示新增一项 OutputItem，根据 `item.type` 区分三种不同类型。
+
+**`message`**
+
+如果 `item.type` 是 "message"，则映射到 ResponseMessageTextDelta 事件。
+
+SourceEvent 示例：
+
+```json
+{
+  "type": "response.output_item.added",
+  "output_index": 0,
+  "item": {
+    "id": "msg_02178445825156400000000000000000000ffffac1924c6296c38",
+    "status": "in_progress",
+    "type": "message",
+    "role": "assistant"
+  },
+  "sequence_number": 1
+}
+```
+
+**`reasoning`**
+
+如果 `item.type` 是 "reasoning"，则映射到 ResponseReasoningSummaryTextDelta 事件。
+
 SourceEvent 示例：
 
 ```json
@@ -47,17 +73,33 @@ SourceEvent 示例：
   "output_index": 0,
   "item": {
     "id": "rs_6806bfca0b2481918a5748308061a2600d3ce51bdffd5476",
-    "status": "in_progress",
-    "type": "message",
-    "role": "assistant",
-    "content": []
+    "type": "reasoning",
+    "status": "in_progress"
   },
   "sequence_number": 1
 }
 ```
 
-- 如果 `item.type` 是 "message"，则映射到 ResponseMessageTextDelta 事件。
-- 如果 `item.type` 是 "reasoning"，则映射到 ResponseReasoningSummaryTextDelta 事件。
+**`function_call`**
+
+如果 `item.type` 是 "function_call"，则映射到 ResponseFunctionCallAdded 事件。
+
+SourceEvent 示例：
+
+```json
+{
+    "type": "response.output_item.added",
+    "output_index": 1,
+    "item": {
+        "call_id": "call_5dfhr165xjnmbx6qodwjky21",
+        "name": "get_weather",
+        "type": "function_call",
+        "id": "fc_02178442654569800000000000000000000ffffac15e3eeeaaec4",
+        "status": "in_progress"
+    },
+    "sequence_number": 38
+}
+```
 
 ### `response.content_part.added`
 
@@ -125,27 +167,6 @@ SourceEvent 示例：
 ```
 
 映射到 ResponseReasoningSummaryTextDelta 事件。
-
-### `response.output_item.added`
-
-SourceEvent 示例：
-
-```json
-{
-    "type": "response.output_item.added",
-    "output_index": 1,
-    "item": {
-        "call_id": "call_5dfhr165xjnmbx6qodwjky21",
-        "name": "get_weather",
-        "type": "function_call",
-        "id": "fc_02178442654569800000000000000000000ffffac15e3eeeaaec4",
-        "status": "in_progress"
-    },
-    "sequence_number": 38
-}
-```
-
-如果 `item.type == "function_call"` ，则映射到 ResponseFunctionCallAdded 事件；否则跳过。
 
 ### `response.function_call_arguments.delta`
 

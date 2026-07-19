@@ -24,34 +24,47 @@ const responseEventHandlers = {
     if (result === undefined) {
       throw new Error("Model API emitted a message-text delta before response.created");
     }
-    const item = result.output.find((outputItem) => outputItem.type === "message");
-    if (item === undefined) {
+    const item = result.output
+      .filter((outputItem) => outputItem.type === "message" && outputItem.content.type === "output_text")[event.index];
+    const content = item?.type === "message" && item.content.type === "output_text" ? item.content : undefined;
+    if (content === undefined) {
+      requireNextIndex(event.index, result.output.filter(
+        (outputItem) => outputItem.type === "message" && outputItem.content.type === "output_text",
+      ).length, event.type);
       result.output.push({ type: "message", role: "assistant", content: { type: "output_text", text: event.delta } });
       return result;
     }
-    if (item.content.type !== "output_text") throw new Error("Model API mixed message text and refusal deltas");
-    item.content.text += event.delta;
+    content.text += event.delta;
     return result;
   },
   "response.message_refusal.delta": (event, result) => {
     if (result === undefined) {
       throw new Error("Model API emitted a message-refusal delta before response.created");
     }
-    const item = result.output.find((outputItem) => outputItem.type === "message");
-    if (item === undefined) {
+    const item = result.output
+      .filter((outputItem) => outputItem.type === "message" && outputItem.content.type === "refusal")[event.index];
+    const content = item?.type === "message" && item.content.type === "refusal" ? item.content : undefined;
+    if (content === undefined) {
+      requireNextIndex(event.index, result.output.filter(
+        (outputItem) => outputItem.type === "message" && outputItem.content.type === "refusal",
+      ).length, event.type);
       result.output.push({ type: "message", role: "assistant", content: { type: "refusal", refusal: event.delta } });
       return result;
     }
-    if (item.content.type !== "refusal") throw new Error("Model API mixed message text and refusal deltas");
-    item.content.refusal += event.delta;
+    content.refusal += event.delta;
     return result;
   },
   "response.reasoning_summary_text.delta": (event, result) => {
     if (result === undefined) {
       throw new Error("Model API emitted a reasoning-summary delta before response.created");
     }
-    const item = result.output.find((outputItem) => outputItem.type === "reasoning");
+    const item = result.output.filter((outputItem) => outputItem.type === "reasoning")[event.index];
     if (item === undefined) {
+      requireNextIndex(
+        event.index,
+        result.output.filter((outputItem) => outputItem.type === "reasoning").length,
+        event.type,
+      );
       result.output.push({
         type: "reasoning",
         content: { type: "reasoning_text", text: "" },
@@ -87,6 +100,16 @@ const responseEventHandlers = {
 function requireResponse(response: Response | undefined, type: string): Response {
   if (response === undefined) throw new Error(`Model API emitted ${type} before response.created`);
   return response;
+}
+
+/**
+ * Requires a new same-type output item to use the next contiguous index.
+ * @param index Requested normalized output index.
+ * @param length Current number of same-type output items.
+ * @param type Event type used in the error message.
+ */
+function requireNextIndex(index: number, length: number, type: string): void {
+  if (index !== length) throw new Error(`Model API emitted ${type} for unknown index ${index}`);
 }
 
 /** Runtime dependencies accepted by Connector. */

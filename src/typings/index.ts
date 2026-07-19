@@ -65,7 +65,7 @@ export interface ResponseFunctionCall {
 export type ResponseOutputItem = OutputMessage | Reasoning | ResponseFunctionCall;
 /** Accumulated provider-neutral model response. */
 export interface Response {
-  id: string;
+  id?: string;
   created_at: number;
   status: ResponseStatus;
   output: ResponseOutputItem[];
@@ -76,9 +76,9 @@ export type ResponseEvent =
   | { type: "response.completed"; response: Response }
   | { type: "response.failed"; response: Response }
   | { type: "response.incomplete"; sequence_number: number; response: Response }
-  | { type: "response.message_text.delta"; delta: string }
-  | { type: "response.message_refusal.delta"; delta: string }
-  | { type: "response.reasoning_summary_text.delta"; delta: string }
+  | { type: "response.message_text.delta"; index: number; delta: string }
+  | { type: "response.message_refusal.delta"; index: number; delta: string }
+  | { type: "response.reasoning_summary_text.delta"; index: number; delta: string }
   | { type: "response.function_call.added"; function_call: ResponseFunctionCall }
   | { type: "response.function_call_arguments.delta"; delta: string; index: number };
 /** Converts between provider-specific and NeuralLink representations. */

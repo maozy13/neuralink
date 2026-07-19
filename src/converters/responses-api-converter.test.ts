@@ -72,16 +72,16 @@ describe("ResponsesAPIConverter", () => {
   });
 
   it.each([
-    [{ type: "response.output_item.added", item: { type: "message" } }, { type: "response.message_text.delta", delta: "" }],
-    [{ type: "response.output_item.added", item: { type: "reasoning" } }, { type: "response.reasoning_summary_text.delta", delta: "" }],
+    [{ type: "response.output_item.added", item: { type: "message" } }, { type: "response.message_text.delta", index: 0, delta: "" }],
+    [{ type: "response.output_item.added", item: { type: "reasoning" } }, { type: "response.reasoning_summary_text.delta", index: 0, delta: "" }],
     [{ type: "response.output_item.added", item: { id: "fc", type: "function_call", call_id: "call", name: "weather" } }, { type: "response.function_call.added", function_call: { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "" } }],
     [{ type: "response.output_item.added", item: { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "{}" } }, { type: "response.function_call.added", function_call: { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "{}" } }],
-    [{ type: "response.content_part.added", part: { type: "output_text" } }, { type: "response.message_text.delta", delta: "" }],
-    [{ type: "response.content_part.added", part: { type: "output_refusal" } }, { type: "response.message_refusal.delta", delta: "" }],
-    [{ type: "response.content_part.added", part: { type: "refusal" } }, { type: "response.message_refusal.delta", delta: "" }],
-    [{ type: "response.output_text.delta", delta: "hello" }, { type: "response.message_text.delta", delta: "hello" }],
-    [{ type: "response.reasoning_summary_part.added", part: { type: "summary_text" } }, { type: "response.reasoning_summary_text.delta", delta: "" }],
-    [{ type: "response.reasoning_summary_text.delta", delta: "think" }, { type: "response.reasoning_summary_text.delta", delta: "think" }],
+    [{ type: "response.content_part.added", part: { type: "output_text" } }, { type: "response.message_text.delta", index: 0, delta: "" }],
+    [{ type: "response.content_part.added", part: { type: "output_refusal" } }, { type: "response.message_refusal.delta", index: 0, delta: "" }],
+    [{ type: "response.content_part.added", part: { type: "refusal" } }, { type: "response.message_refusal.delta", index: 0, delta: "" }],
+    [{ type: "response.output_text.delta", delta: "hello" }, { type: "response.message_text.delta", index: 0, delta: "hello" }],
+    [{ type: "response.reasoning_summary_part.added", part: { type: "summary_text" } }, { type: "response.reasoning_summary_text.delta", index: 0, delta: "" }],
+    [{ type: "response.reasoning_summary_text.delta", delta: "think" }, { type: "response.reasoning_summary_text.delta", index: 0, delta: "think" }],
   ] as const)("maps delta source event %#", (source, normalized) => {
     expect(converter.fromEvent(source)).toEqual(normalized);
   });
@@ -100,6 +100,26 @@ describe("ResponsesAPIConverter", () => {
     expect(() => converter.fromEvent({
       type: "response.function_call_arguments.delta", delta: "{}", output_index: 0,
     })).toThrow("before response.created");
+  });
+
+  it("maps provider output positions to same-type text and reasoning indexes", () => {
+    const response = {
+      id: "r", created_at: 1, status: "in_progress" as const,
+      output: [
+        { type: "message" as const, role: "assistant" as const, content: { type: "output_text" as const, text: "a" } },
+        { type: "reasoning" as const, content: { type: "reasoning_text" as const, text: "" }, summary: { type: "summary_text" as const, text: "r" } },
+        { type: "message" as const, role: "assistant" as const, content: { type: "output_text" as const, text: "b" } },
+      ],
+    };
+    expect(converter.fromEvent({
+      type: "response.output_item.added", output_index: 3, item: { type: "message" },
+    }, response)).toEqual({ type: "response.message_text.delta", index: 2, delta: "" });
+    expect(converter.fromEvent({
+      type: "response.output_text.delta", output_index: 2, delta: "x",
+    }, response)).toEqual({ type: "response.message_text.delta", index: 1, delta: "x" });
+    expect(converter.fromEvent({
+      type: "response.reasoning_summary_text.delta", output_index: 1, delta: "y",
+    }, response)).toEqual({ type: "response.reasoning_summary_text.delta", index: 0, delta: "y" });
   });
 
   it("prints and ignores unsupported events", () => {
