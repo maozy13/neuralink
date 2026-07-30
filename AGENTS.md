@@ -13,6 +13,7 @@
 
 - 总是从 `design/architecture.md` 开始了解整体的项目架构。
 - 优先更新 `typings` 中的类型定义。
+- 代码编写完成后，检查是否需要更新 README.md 和 docs/ 下的文档。
 
 ## 二、项目结构
 
@@ -20,6 +21,7 @@
 .
 ├── AGENTS.md                         # 项目的基本要求
 ├── package.json                      # npm 脚本与依赖定义
+├── docs/                             # 对外发布的文档
 ├── references/                       # 项目依赖的外部 API
 │   ├── chat-completions/             # Chat Completions 风格的接口定义
 │   ├── responses-api/                # Responses API 风格的接口定义
