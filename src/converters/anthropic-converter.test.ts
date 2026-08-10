@@ -24,10 +24,13 @@ describe("AnthropicConverter", () => {
     expect(new AnthropicConverter().toAPI({
       model: "claude-test",
       input: [
-        { type: "message", role: "system", content: { type: "input_text", text: "System" } },
-        { type: "message", role: "developer", content: { type: "input_text", text: "Developer" } },
-        { type: "message", role: "user", content: { type: "input_text", text: "Question" } },
-        { type: "message", role: "assistant", content: { type: "input_text", text: "Answer" } },
+        { type: "message", role: "system", content: [{ type: "input_text", text: "System" }] },
+        { type: "message", role: "developer", content: [{ type: "input_text", text: "Developer" }] },
+        { type: "message", role: "user", content: [
+          { type: "input_text", text: "Quest" },
+          { type: "input_text", text: "ion" },
+        ] },
+        { type: "message", role: "assistant", content: [{ type: "input_text", text: "Answer" }] },
         { type: "function_call", call_id: "a", name: "first", arguments: "{}" },
         { type: "function_call", call_id: "b", name: "second", arguments: "{\"x\":1}" },
         { type: "function_call_output", call_id: "a", output: "result-a" },
@@ -74,7 +77,7 @@ describe("AnthropicConverter", () => {
         : { type, file_url: "https://example.test/file.txt" };
       expect(() => new AnthropicConverter().toAPI({
         model: "claude-test",
-        input: [{ type: "message", role: "user", content }],
+        input: [{ type: "message", role: "user", content: [content] }],
       })).toThrow(type);
     },
   );

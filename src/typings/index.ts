@@ -8,7 +8,7 @@ export interface FileMessage { type: "input_file"; file_url: string }
 export interface Message {
   type: "message";
   role: "user" | "assistant" | "developer" | "system";
-  content: TextMessage | ImageMessage | FileMessage;
+  content: Array<TextMessage | ImageMessage | FileMessage>;
 }
 /** A function call supplied as model input. */
 export interface FunctionCall { type: "function_call"; call_id: string; name: string; arguments: string }

@@ -266,9 +266,11 @@ type InputItem = Message | FunctionCall | FunctionCallOutput;
 interface Message {
   type: "message";
   role: "user" | "assistant" | "developer" | "system";
-  content: TextMessage | ImageMessage | FileMessage;
+  content: Array<TextMessage | ImageMessage | FileMessage>;
 }
 ```
+
+`content` 是有序内容块数组，可在同一条消息中包含多个文本、图片或文件输入块。
 
 ### TextMessage
 

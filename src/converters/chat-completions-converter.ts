@@ -110,7 +110,9 @@ export class ChatCompletionsConverter implements Converter<ChatCompletionsReques
       if (item.type === "message") {
         messages.push({
           role: item.role,
-          content: item.content.type === "input_text" ? item.content.text : this.unsupportedContent(item.content.type),
+          content: item.content
+            .map((content) => content.type === "input_text" ? content.text : this.unsupportedContent(content.type))
+            .join(""),
         });
         continue;
       }

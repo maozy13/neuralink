@@ -112,10 +112,10 @@ const stream = connector.call("your-model", [
   {
     type: "message",
     role: "user",
-    content: {
+    content: [{
       type: "input_text",
       text: "比较 TypeScript 和 JavaScript。",
-    },
+    }],
   },
 ]);
 ```

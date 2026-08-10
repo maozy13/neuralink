@@ -71,7 +71,7 @@ InputItem 是 Connector 接收的规范化的模型输入，可以是以下结�
 | -- | -- | -- |
 | role | enum("user", "assistant", "developer", "system") | 消息发起者的角色 |
 | type | "message" | input 的类型，固定为 "message" |
-| content | TextMessage \| ImageMessage \| FileMessage | 消息的类型 |
+| content | Array<TextMessage \| ImageMessage \| FileMessage> | 消息的类型 |
 
 ### FunctionCall
 

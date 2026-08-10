@@ -44,7 +44,7 @@ async function main(): Promise<void> {
     type: "function_call_output", call_id: call.call_id, output: JSON.stringify(getWeather(call.name)),
   }));
   const finalResponse = await consume(connector.call(model, [
-    { type: "message", role: "user", content: { type: "input_text", text: prompt } },
+    { type: "message", role: "user", content: [{ type: "input_text", text: prompt }] },
     ...functionCalls,
     ...functionOutputs,
   ], { tools }));

@@ -6,7 +6,15 @@ describe("ResponsesAPIConverter", () => {
 
   it("enables streaming", () => {
     const tools = [{ type: "function" as const, name: "weather", description: "Weather", parameters: { type: "object" } }];
-    expect(converter.toAPI({ model: "model", input: "hello", tools })).toEqual({ model: "model", input: "hello", tools, stream: true });
+    const input = [{
+      type: "message" as const,
+      role: "user" as const,
+      content: [
+        { type: "input_text" as const, text: "hello" },
+        { type: "input_image" as const, image_url: "https://example.test/image.png" },
+      ],
+    }];
+    expect(converter.toAPI({ model: "model", input, tools })).toEqual({ model: "model", input, tools, stream: true });
   });
 
   it.each([

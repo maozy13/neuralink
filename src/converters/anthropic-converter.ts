@@ -150,9 +150,11 @@ export class AnthropicConverter
     const systemMessages: string[] = [];
     for (const item of input) {
       if (item.type === "message") {
-        if (item.content.type !== "input_text") this.unsupportedContent(item.content.type);
-        if (item.role === "system" || item.role === "developer") systemMessages.push(item.content.text);
-        else messages.push({ role: item.role, content: item.content.text });
+        const content = item.content
+          .map((part) => part.type === "input_text" ? part.text : this.unsupportedContent(part.type))
+          .join("");
+        if (item.role === "system" || item.role === "developer") systemMessages.push(content);
+        else messages.push({ role: item.role, content });
         continue;
       }
       const role = item.type === "function_call" ? "assistant" : "user";

@@ -10,7 +10,10 @@ describe("ChatCompletionsConverter", () => {
       stream: true,
     });
     expect(new ChatCompletionsConverter().toAPI({ model: "m", input: [
-      { type: "message", role: "assistant", content: { type: "input_text", text: "ok" } },
+      { type: "message", role: "assistant", content: [
+        { type: "input_text", text: "o" },
+        { type: "input_text", text: "k" },
+      ] },
       { type: "function_call", call_id: "c", name: "weather", arguments: "{}" },
       { type: "function_call", call_id: "d", name: "weather", arguments: "{}" },
       { type: "function_call_output", call_id: "c", output: "x" },
@@ -26,7 +29,7 @@ describe("ChatCompletionsConverter", () => {
 
   it.each(["input_image", "input_file"] as const)("rejects %s", (type) => {
     const content = type === "input_image" ? { type, image_url: "x" } : { type, file_url: "x" };
-    expect(() => new ChatCompletionsConverter().toAPI({ model: "m", input: [{ type: "message", role: "user", content }] })).toThrow(type);
+    expect(() => new ChatCompletionsConverter().toAPI({ model: "m", input: [{ type: "message", role: "user", content: [content] }] })).toThrow(type);
   });
 
   it("maps streaming chunks to the new events", () => {
