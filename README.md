@@ -15,7 +15,7 @@ NeuralLink 是一个面向多种大模型服务的 TypeScript 流式客户端。
 ## 安装
 
 ```bash
-pnpm add neuralink
+pnpm add @maozy13/neuralink
 ```
 
 NeuralLink 使用原生 `fetch`、`ReadableStream` 和异步生成器，建议运行在 Node.js 18 及以上版本。
@@ -25,7 +25,7 @@ NeuralLink 使用原生 `fetch`、`ReadableStream` 和异步生成器，建议�
 以下示例连接一个 Responses API 兼容接口，并实时输出模型生成的文本：
 
 ```ts
-import { Connector, ResponsesAPIConverter } from "neuralink";
+import { Connector, ResponsesAPIConverter } from "@maozy13/neuralink";
 
 const connector = new Connector(
   "https://example.com/v1/responses",
@@ -69,7 +69,7 @@ import {
   ChatCompletionsConverter,
   Connector,
   ResponsesAPIConverter,
-} from "neuralink";
+} from "@maozy13/neuralink";
 
 const responses = new Connector(
   "https://example.com/v1/responses",
@@ -127,7 +127,7 @@ Responses API 转换器可以透传规范化的图片和文件输入；当前 Ch
 先声明工具并调用模型：
 
 ```ts
-import type { Response, ResponseFunctionCall } from "neuralink";
+import type { Response, ResponseFunctionCall } from "@maozy13/neuralink";
 
 const tools = [{
   type: "function" as const,
@@ -149,7 +149,7 @@ const tools = [{
  * @returns 流结束时的完整规范化响应。
  */
 async function consume(
-  stream: AsyncGenerator<import("neuralink").ResponseEvent, Response>,
+  stream: AsyncGenerator<import("@maozy13/neuralink").ResponseEvent, Response>,
 ): Promise<Response> {
   while (true) {
     const next = await stream.next();
@@ -215,7 +215,7 @@ import type {
   ResponseEvent,
   ResponseFunctionCall,
   Tool,
-} from "neuralink";
+} from "@maozy13/neuralink";
 ```
 
 ## 本地开发

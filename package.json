@@ -1,9 +1,23 @@
 {
-  "name": "neuralink",
+  "name": "@maozy13/neuralink",
   "version": "0.1.0",
+  "description": "A unified TypeScript streaming client for multiple LLM API styles.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist/index.js",
+    "dist/index.d.ts",
+    "dist/connector.js",
+    "dist/connector.d.ts",
+    "dist/converters/*.js",
+    "dist/converters/*.d.ts",
+    "dist/typings/index.js",
+    "dist/typings/index.d.ts",
+    "!dist/**/*.test.js",
+    "!dist/**/*.test.d.ts",
+    "README.md"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -16,7 +30,11 @@
     "demo:chat": "pnpm build && tsc -p demo/tsconfig.json && node dist/demo/chat-completions-demo.js",
     "demo:anthropic": "pnpm build && tsc -p demo/tsconfig.json && node dist/demo/anthropic-demo.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --coverage"
+    "test": "vitest run --coverage",
+    "prepublishOnly": "pnpm test && pnpm build"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "3.2.7",

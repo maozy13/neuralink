@@ -1,4 +1,4 @@
-import { Connector, ResponsesAPIConverter, type FunctionCallOutput, type ResponseFunctionCall } from "neuralink";
+import { Connector, ResponsesAPIConverter, type FunctionCallOutput, type ResponseFunctionCall } from "@maozy13/neuralink";
 
 /** Node.js runtime values used by the demo without requiring Node type declarations. */
 interface DemoRuntime {
@@ -54,7 +54,7 @@ async function main(): Promise<void> {
  */
 async function consume(
   response: ReturnType<Connector<unknown, unknown>["call"]>,
-): Promise<import("neuralink").Response> {
+): Promise<import("@maozy13/neuralink").Response> {
   let eventCount = 0;
 
   while (true) {

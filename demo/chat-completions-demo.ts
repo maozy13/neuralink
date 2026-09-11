@@ -4,7 +4,7 @@ import {
   type FunctionCallOutput,
   type Response,
   type ResponseFunctionCall,
-} from "neuralink";
+} from "@maozy13/neuralink";
 
 /** Minimal Node.js runtime values required by this demo. */
 interface DemoRuntime { process?: { env: Record<string, string | undefined>; exitCode?: number } }
