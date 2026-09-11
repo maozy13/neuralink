@@ -32,6 +32,19 @@ describe("ChatCompletionsConverter", () => {
     expect(() => new ChatCompletionsConverter().toAPI({ model: "m", input: [{ type: "message", role: "user", content: [content] }] })).toThrow(type);
   });
 
+  it.each(["custom_tool_call", "custom_tool_call_output"] as const)("rejects %s input", (type) => {
+    const item = type === "custom_tool_call"
+      ? { type, call_id: "call", name: "apply_patch", input: "patch" }
+      : { type, call_id: "call", output: "done" };
+    expect(() => new ChatCompletionsConverter().toAPI({ model: "m", input: [item] })).toThrow(type);
+  });
+
+  it("rejects custom tool definitions", () => {
+    expect(() => new ChatCompletionsConverter().toAPI({
+      model: "m", input: "x", tools: [{ type: "custom", name: "apply_patch" }],
+    })).toThrow("custom tools");
+  });
+
   it("maps streaming chunks to the new events", () => {
     const converter = new ChatCompletionsConverter();
     expect(converter.fromEvent({ id: "r", created: 1, choices: [{ index: 0, delta: { content: "hello", reasoning_content: "think" } }] }, undefined)).toEqual([

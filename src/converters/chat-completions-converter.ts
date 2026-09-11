@@ -120,6 +120,7 @@ export class ChatCompletionsConverter implements Converter<ChatCompletionsReques
         messages.push({ role: "tool", tool_call_id: item.call_id, content: item.output });
         continue;
       }
+      if (item.type !== "function_call") return this.unsupportedInput(item.type);
       const previous = messages.at(-1);
       const toolCall = {
         id: item.call_id,
@@ -138,6 +139,7 @@ export class ChatCompletionsConverter implements Converter<ChatCompletionsReques
    * @returns Chat Completions function tool definition.
    */
   private toTool(tool: Tool): ChatCompletionsTool {
+    if (tool.type !== "function") return this.unsupportedTool(tool.type);
     return {
       type: "function",
       function: { name: tool.name, description: tool.description, parameters: tool.parameters },
@@ -151,6 +153,24 @@ export class ChatCompletionsConverter implements Converter<ChatCompletionsReques
    */
   private unsupportedContent(type: "input_image" | "input_file"): never {
     throw new Error(`ChatCompletionsConverter does not support ${type}`);
+  }
+
+  /**
+   * Rejects structured input unsupported by the Chat Completions converter.
+   * @param type Unsupported normalized input type.
+   * @returns This function never returns.
+   */
+  private unsupportedInput(type: "custom_tool_call" | "custom_tool_call_output"): never {
+    throw new Error(`ChatCompletionsConverter does not support ${type}`);
+  }
+
+  /**
+   * Rejects tool definitions unsupported by the Chat Completions converter.
+   * @param type Unsupported normalized tool type.
+   * @returns This function never returns.
+   */
+  private unsupportedTool(type: "custom"): never {
+    throw new Error(`ChatCompletionsConverter does not support ${type} tools`);
   }
 
   /**

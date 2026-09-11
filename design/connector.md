@@ -44,6 +44,8 @@ InputItem 是 Connector 接收的规范化的模型输入，可以是以下结�
 - Message
 - FunctionCall
 - FunctionCallOutput
+- CustomToolCall
+- CustomToolCallOutput
 
 `Optional`
 
@@ -97,6 +99,31 @@ InputItem 是 Connector 接收的规范化的模型输入，可以是以下结�
 | type | "function_call_output" | input 的类型，固定为 "function_call_output" |
 | call_id | string | 模型生成的函数调用执行的 ID，用于关联函数调用执行和函数调用结果 |
 | output | string | 函数执行的结果 |
+
+### CustomToolCall
+
+生成可执行代码。
+
+**属性：**
+
+| 属性 | 类型 | 说明 |
+| -- | -- | -- |
+| type | "custom_tool_call" | input 的类型，固定为 "custom_tool_call" |
+| call_id | string | 模型生成的可执行代码的执行 ID |
+| name | string | 模型选择的要执行代码的工具名称 |
+| input | string | 模型生成的可执行代码 |
+
+### CustomToolCallOutput
+
+可执行代码的执行结果。
+
+**属性：**
+
+| 属性 | 类型 | 说明 |
+| -- | -- | -- |
+| type | "custom_tool_call_output" | input 的类型，固定为 "custom_tool_call_output" |
+| call_id | string | 模型生成的可执行代码的执行 ID，用于关联代码执行和代码执行结果 |
+| output | string | 代码的执行结果 |
 
 ### TextMessage
 

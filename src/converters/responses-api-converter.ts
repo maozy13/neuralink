@@ -46,8 +46,21 @@ interface ResponsesAPIFunctionCallItem {
   arguments?: string;
   [key: string]: unknown;
 }
+/** An upstream Responses API custom-tool-call output item. */
+interface ResponsesAPICustomToolCallItem {
+  id: string;
+  type: "custom_tool_call";
+  call_id: string;
+  name: string;
+  input?: string;
+  [key: string]: unknown;
+}
 /** An output item carried by an upstream lifecycle response. */
-type ResponsesAPIOutputItem = ResponsesAPIMessageItem | ResponsesAPIReasoningItem | ResponsesAPIFunctionCallItem;
+type ResponsesAPIOutputItem =
+  | ResponsesAPIMessageItem
+  | ResponsesAPIReasoningItem
+  | ResponsesAPIFunctionCallItem
+  | ResponsesAPICustomToolCallItem;
 /** A Responses API lifecycle event carrying a response object. */
 interface ResponsesAPILifecycleEvent extends ResponsesAPIEvent {
   type: "response.created" | "response.completed" | "response.failed" | "response.incomplete";
@@ -65,7 +78,7 @@ interface ResponsesAPIOutputItemAddedEvent extends ResponsesAPIEvent {
 interface ResponsesAPIContentPartAddedEvent extends ResponsesAPIEvent {
   type: "response.content_part.added";
   output_index?: number;
-  part: { type: "output_text" | "output_refusal" | "refusal"; [key: string]: unknown };
+  part: { type: string; [key: string]: unknown };
   [key: string]: unknown;
 }
 /** An incremental Responses API output-text event. */
@@ -82,11 +95,29 @@ interface ResponsesAPIReasoningSummaryTextDeltaEvent extends ResponsesAPIEvent {
   delta: string;
   [key: string]: unknown;
 }
+/** An incremental Responses API reasoning-text event. */
+interface ResponsesAPIReasoningTextDeltaEvent extends ResponsesAPIEvent {
+  type: "response.reasoning_text.delta";
+  output_index?: number;
+  delta: string;
+  [key: string]: unknown;
+}
 /** An incremental Responses API function-call arguments event. */
 interface ResponsesAPIFunctionCallArgumentsDeltaEvent extends ResponsesAPIEvent {
   type: "response.function_call_arguments.delta";
   delta: string;
   output_index: number;
+  /** Stable upstream output-item identity, when supplied. */
+  item_id?: string;
+  [key: string]: unknown;
+}
+/** An incremental Responses API custom-tool input event. */
+interface ResponsesAPICustomToolCallInputDeltaEvent extends ResponsesAPIEvent {
+  type: "response.custom_tool_call_input.delta";
+  delta: string;
+  output_index: number;
+  /** Stable upstream output-item identity, when supplied. */
+  item_id?: string;
   [key: string]: unknown;
 }
 /** A JSON event emitted by a Responses API-compatible endpoint. */
@@ -108,6 +139,7 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
   /**
    * Converts a Responses API source event to the new normalized ResponseEvent model.
    * @param event Provider-specific streaming event.
+   * @param response Response accumulated before the event.
    * @returns A normalized event, or undefined when the source event is unsupported.
    */
   public fromEvent(event: ResponsesAPISourceEvent, response?: Response): ResponseEvent | undefined {
@@ -123,6 +155,17 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
       case "response.content_part.added": {
         const partEvent = event as ResponsesAPIContentPartAddedEvent;
         const partType = partEvent.part.type;
+        if (partType === "reasoning_text") {
+          return {
+            type: "response.reasoning_text.delta",
+            index: this.existingReasoningIndex(response, partEvent.output_index),
+            delta: "",
+          };
+        }
+        if (partType !== "output_text" && partType !== "output_refusal" && partType !== "refusal") {
+          console.log(event);
+          return undefined;
+        }
         return partType === "output_text"
           ? { type: "response.message_text.delta", index: this.existingContentIndex(response, "output_text", partEvent.output_index), delta: "" }
           : { type: "response.message_refusal.delta", index: this.contentIndex(response, "refusal"), delta: "" };
@@ -145,9 +188,20 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
           index: this.existingReasoningIndex(response, (event as ResponsesAPIReasoningSummaryTextDeltaEvent).output_index),
           delta: (event as ResponsesAPIReasoningSummaryTextDeltaEvent).delta,
         };
+      case "response.reasoning_text.delta":
+        return {
+          type: "response.reasoning_text.delta",
+          index: this.existingReasoningIndex(response, (event as ResponsesAPIReasoningTextDeltaEvent).output_index),
+          delta: (event as ResponsesAPIReasoningTextDeltaEvent).delta,
+        };
       case "response.function_call_arguments.delta":
         return this.fromFunctionCallArgumentsDelta(
           event as ResponsesAPIFunctionCallArgumentsDeltaEvent,
+          response,
+        );
+      case "response.custom_tool_call_input.delta":
+        return this.fromCustomToolCallInputDelta(
+          event as ResponsesAPICustomToolCallInputDeltaEvent,
           response,
         );
       default:
@@ -169,16 +223,41 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
     if (response === undefined) {
       throw new Error("Responses API emitted function-call arguments before response.created");
     }
-    const index = response.output
+    const index = event.item_id === undefined ? response.output
       .slice(0, event.output_index + 1)
       .filter((item) => item.type === "function_call")
-      .length - 1;
+      .length - 1 : response.output
+        .filter((item) => item.type === "function_call")
+        .findIndex((item) => item.id === event.item_id);
     return { type: "response.function_call_arguments.delta", delta: event.delta, index };
+  }
+
+  /**
+   * Converts an upstream output index to the normalized custom-tool-call index.
+   * @param event Upstream custom-tool input fragment.
+   * @param response Response accumulated before the fragment.
+   * @returns A normalized custom-tool input delta event.
+   */
+  private fromCustomToolCallInputDelta(
+    event: ResponsesAPICustomToolCallInputDeltaEvent,
+    response: Response | undefined,
+  ): ResponseEvent {
+    if (response === undefined) {
+      throw new Error("Responses API emitted custom-tool input before response.created");
+    }
+    const index = event.item_id === undefined ? response.output
+      .slice(0, event.output_index + 1)
+      .filter((item) => item.type === "custom_tool_call")
+      .length - 1 : response.output
+        .filter((item) => item.type === "custom_tool_call")
+        .findIndex((item) => item.id === event.item_id);
+    return { type: "response.custom_tool_call_input.delta", delta: event.delta, index };
   }
 
   /**
    * Converts a newly selected output item into its normalized initialization event.
    * @param event Upstream output-item-added event.
+   * @param response Response accumulated before the event.
    * @returns A normalized initialization event, or undefined for an unsupported output item.
    */
   private fromOutputItemAdded(event: ResponsesAPIOutputItemAddedEvent, response: Response | undefined): ResponseEvent | undefined {
@@ -190,6 +269,19 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
         type: "response.reasoning_summary_text.delta",
         index: response?.output.filter((item) => item.type === "reasoning").length ?? 0,
         delta: "",
+      };
+    }
+    if (event.item.type === "custom_tool_call") {
+      const item = event.item as ResponsesAPICustomToolCallItem;
+      return {
+        type: "response.custom_tool_call.added",
+        custom_tool_call: {
+          id: item.id,
+          type: "custom_tool_call",
+          call_id: item.call_id,
+          name: item.name,
+          input: item.input ?? "",
+        },
       };
     }
     if (event.item.type !== "function_call") {
@@ -283,6 +375,15 @@ export class ResponsesAPIConverter implements Converter<ResponsesAPIRequest, Res
         call_id: item.call_id,
         name: item.name,
         arguments: item.arguments ?? "",
+      };
+    }
+    if (item.type === "custom_tool_call") {
+      return {
+        id: item.id,
+        type: "custom_tool_call",
+        call_id: item.call_id,
+        name: item.name,
+        input: item.input ?? "",
       };
     }
     if (item.type === "reasoning") {

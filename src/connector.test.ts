@@ -27,6 +27,55 @@ function blocks(events: object[]): string {
 }
 
 describe("Connector", () => {
+  it.each([true, false])("handles DeepSeek reasoning before parallel tools (item IDs: %s)", async (withIds) => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const source = [
+      { type: "response.created", response: { id: "r", created_at: 1 } },
+      { type: "response.output_item.added", output_index: 0, item: { type: "reasoning", id: "rs" } },
+      { type: "response.content_part.added", output_index: 0, part: { type: "reasoning_text", text: "" } },
+      { type: "response.reasoning_text.delta", output_index: 0, delta: "Think" },
+      { type: "response.output_item.added", output_index: 1, item: { type: "function_call", id: "a", call_id: "ca", name: "weather" } },
+      { type: "response.output_item.added", output_index: 2, item: { type: "function_call", id: "b", call_id: "cb", name: "weather" } },
+      { type: "response.function_call_arguments.delta", output_index: 2, ...(withIds ? { item_id: "b" } : {}), delta: '{"city":"北京"}' },
+      { type: "response.function_call_arguments.delta", output_index: 1, ...(withIds ? { item_id: "a" } : {}), delta: '{"city":"上海"}' },
+      { type: "response.completed", response: { id: "r", created_at: 1 } },
+    ];
+    const iterator = new Connector("url", "key", new ResponsesAPIConverter(), {
+      fetch: vi.fn().mockResolvedValue(sse([blocks(source)])),
+    }).call("deepseek-flash", "查询上海和北京天气");
+    let next = await iterator.next();
+    while (!next.done) next = await iterator.next();
+    expect(next.value.output).toEqual([
+      { type: "reasoning", content: { type: "reasoning_text", text: "Think" }, summary: { type: "summary_text", text: "" } },
+      { type: "function_call", id: "a", call_id: "ca", name: "weather", arguments: '{"city":"上海"}' },
+      { type: "function_call", id: "b", call_id: "cb", name: "weather", arguments: '{"city":"北京"}' },
+    ]);
+    expect(next.value.status).toBe("completed");
+    log.mockRestore();
+  });
+
+  it("accumulates reasoning text and custom-tool input", async () => {
+    const source = [
+      { type: "response.created", response: { id: "r", created_at: 1 } },
+      { type: "response.reasoning_text.delta", output_index: 0, delta: "think" },
+      { type: "response.output_item.added", output_index: 1, item: { id: "ctc", type: "custom_tool_call", call_id: "call", name: "apply_patch" } },
+      { type: "response.custom_tool_call_input.delta", item_id: "ctc", output_index: 1, delta: "*** Begin" },
+      { type: "response.custom_tool_call_input.delta", item_id: "ctc", output_index: 1, delta: " Patch" },
+      { type: "response.completed", response: { id: "r", created_at: 1 } },
+    ];
+    const iterator = new Connector("url", "key", new ResponsesAPIConverter(), {
+      fetch: vi.fn().mockResolvedValue(sse([blocks(source)])),
+    }).call("deepseek-flash", "create a file", {
+      tools: [{ type: "custom", name: "apply_patch", description: "Apply a patch" }],
+    });
+    let next = await iterator.next();
+    while (!next.done) next = await iterator.next();
+    expect(next.value.output).toEqual([
+      { type: "reasoning", content: { type: "reasoning_text", text: "think" }, summary: { type: "summary_text", text: "" } },
+      { id: "ctc", type: "custom_tool_call", call_id: "call", name: "apply_patch", input: "*** Begin Patch" },
+    ]);
+  });
+
   it("posts, yields normalized events, and accumulates all delta kinds", async () => {
     const source = [
       { type: "response.created", response: { id: "r", created_at: 1, status: "in_progress" } },
@@ -87,10 +136,13 @@ describe("Connector", () => {
     [{ type: "response.output_text.delta", delta: "x" }, "message-text delta"],
     [{ type: "response.content_part.added", part: { type: "refusal" } }, "message-refusal delta"],
     [{ type: "response.reasoning_summary_text.delta", delta: "x" }, "reasoning-summary delta"],
+    [{ type: "response.reasoning_text.delta", delta: "x" }, "response.reasoning_text.delta"],
     [{ type: "response.completed", response: { id: "r", created_at: 1 } }, "response.completed"],
     [{ type: "response.incomplete", response: { id: "r", created_at: 1 } }, "response.incomplete"],
     [{ type: "response.output_item.added", item: { id: "fc", type: "function_call", call_id: "call", name: "weather" } }, "response.function_call.added"],
+    [{ type: "response.output_item.added", item: { id: "ctc", type: "custom_tool_call", call_id: "call", name: "apply_patch" } }, "response.custom_tool_call.added"],
     [{ type: "response.function_call_arguments.delta", output_index: 0, delta: "{}" }, "before response.created"],
+    [{ type: "response.custom_tool_call_input.delta", output_index: 0, delta: "patch" }, "before response.created"],
   ])("rejects %j before creation", async (event, message) => {
     const call = new Connector("url", "key", new ResponsesAPIConverter(), { fetch: vi.fn().mockResolvedValue(sse([blocks([event])])) }).call("m", "x");
     await expect(Array.fromAsync(call)).rejects.toThrow(message);
@@ -105,6 +157,17 @@ describe("Connector", () => {
       fetch: vi.fn().mockResolvedValue(sse([blocks(source)])),
     }).call("m", "x");
     await expect(Array.fromAsync(call)).rejects.toThrow("unknown function call index -1");
+  });
+
+  it("rejects custom-tool input when no custom call has been added", async () => {
+    const source = [
+      { type: "response.created", response: { id: "r", created_at: 1 } },
+      { type: "response.custom_tool_call_input.delta", output_index: 0, delta: "patch" },
+    ];
+    const call = new Connector("url", "key", new ResponsesAPIConverter(), {
+      fetch: vi.fn().mockResolvedValue(sse([blocks(source)])),
+    }).call("m", "x");
+    await expect(Array.fromAsync(call)).rejects.toThrow("unknown custom tool call index -1");
   });
 
   it("routes parallel function arguments by normalized function index", async () => {

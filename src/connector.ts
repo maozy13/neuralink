@@ -54,6 +54,25 @@ const responseEventHandlers = {
     content.refusal += event.delta;
     return result;
   },
+  "response.reasoning_text.delta": (event, result) => {
+    const response = requireResponse(result, "response.reasoning_text.delta");
+    const item = response.output.filter((outputItem) => outputItem.type === "reasoning")[event.index];
+    if (item === undefined) {
+      requireNextIndex(
+        event.index,
+        response.output.filter((outputItem) => outputItem.type === "reasoning").length,
+        event.type,
+      );
+      response.output.push({
+        type: "reasoning",
+        content: { type: "reasoning_text", text: event.delta },
+        summary: { type: "summary_text", text: "" },
+      });
+      return response;
+    }
+    item.content.text += event.delta;
+    return response;
+  },
   "response.reasoning_summary_text.delta": (event, result) => {
     if (result === undefined) {
       throw new Error("Model API emitted a reasoning-summary delta before response.created");
@@ -87,6 +106,20 @@ const responseEventHandlers = {
       throw new Error(`Model API emitted arguments for unknown function call index ${event.index}`);
     }
     item.arguments += event.delta;
+    return response;
+  },
+  "response.custom_tool_call.added": (event, result) => {
+    const response = requireResponse(result, "response.custom_tool_call.added");
+    response.output.push(event.custom_tool_call);
+    return response;
+  },
+  "response.custom_tool_call_input.delta": (event, result) => {
+    const response = requireResponse(result, "response.custom_tool_call_input.delta");
+    const item = response.output.filter((outputItem) => outputItem.type === "custom_tool_call")[event.index];
+    if (item === undefined) {
+      throw new Error(`Model API emitted input for unknown custom tool call index ${event.index}`);
+    }
+    item.input += event.delta;
     return response;
   },
 } satisfies ResponseEventHandlerMap;

@@ -12,9 +12,12 @@ ResponseEvent 可以是下列结构中的一种：
 - ResponseIncomplete
 - ResponseMessageTextDelta
 - ResponseMessageRefusalDelta
+- ResponseReasoningTextDelta
 - ResponseReasoningSummaryTextDelta
 - ResponseFunctionCallAdded
 - ResponseFunctionCallArgumentsDelta
+- ResponseCustomToolCallAdded
+- ResponseCustomToolCallInputDelta
 
 ### ResponseCreated
 
@@ -85,6 +88,18 @@ ResponseEvent 可以是下列结构中的一种：
 | index | number | 增量文本所属拒绝消息的索引，当模型输出多个拒绝消息时用于定位 |
 | delta | string | 拒绝消息增量文本 |
 
+### ResponseReasoningTextDelta
+
+增量生成推理正文。
+
+**属性：**
+
+| 属性 | 类型 | 说明 |
+| -- | -- | -- |
+| type | "response.reasoning_text.delta" | 事件类型，固定为 "response.reasoning_text.delta" |
+| index | number | 增量文本所属推理正文的索引，当模型输出多个推理正文时用于定位 |
+| delta | string | 推理正文增量文本 |
+
 ### ResponseReasoningSummaryTextDelta
 
 增量生成推理摘要。
@@ -108,6 +123,17 @@ ResponseEvent 可以是下列结构中的一种：
 | type | "response.function_call.added" | 事件类型，固定为 "response.function_call.added" |
 | function_call | FunctionCall | 模型选择的函数。 `arguments` 初始为空字符串，在后续 ResponseFunctionCallArgumentsDelta 中进行增量拼接。 |
 
+### ResponseCustomToolCallAdded
+
+模型从 tools 中选择了自定义代码执行工具。
+
+**属性：**
+
+| 属性 | 类型 | 说明 |
+| -- | -- | -- |
+| type | "response.custom_tool_call.added" | 事件类型，固定为 "response.custom_tool_call.added" |
+| custom_tool_call | CustomToolCall | 模型选择的执行方法。 `input` 初始为空字符串，在后续 ResponseCustomToolCallInputDelta 中进行增量拼接。 |
+
 ### ResponseFunctionCallArgumentsDelta
 
 增量生成函数调用参数。
@@ -119,6 +145,18 @@ ResponseEvent 可以是下列结构中的一种：
 | type | "response.function_call_arguments.delta" | 事件类型，固定为 "response.function_call_arguments.delta" |
 | index | number | 增量文本所属的函数的索引，当模型输出多个函数时用于定位 |
 | delta | string | 函数调用参数增量文本 |
+
+### ResponseCustomToolCallInputDelta
+
+增量生成可执行代码。
+
+**属性：**
+
+| 属性 | 类型 | 说明 |
+| -- | -- | -- |
+| type | "response.custom_tool_call_input.delta" | 事件类型，固定为 "response.custom_tool_call_input.delta" |
+| index | number | 增量代码所属的代码块索引，当模型输出多段代码时用于定位 |
+| delta | string | 模型生成的增量代码 |
 
 ## 类型
 

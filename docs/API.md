@@ -1,6 +1,6 @@
 # NeuralLink API 参考
 
-本文档描述 `neuralink` 包入口公开导出的类、方法、属性和 TypeScript
+本文档描述 `@maozy13/neuralink` 包入口公开导出的类、方法、属性和 TypeScript
 类型。供应商转换器内部使用的请求和原始事件类型不属于公共 API。
 
 ## 导入
@@ -11,7 +11,7 @@ import {
   ChatCompletionsConverter,
   Connector,
   ResponsesAPIConverter,
-} from "neuralink";
+} from "@maozy13/neuralink";
 
 import type {
   ConnectorOptions,
@@ -20,7 +20,7 @@ import type {
   Response,
   ResponseEvent,
   Tool,
-} from "neuralink";
+} from "@maozy13/neuralink";
 ```
 
 ## Connector
@@ -151,6 +151,10 @@ fromEvent(
 转换后的请求会自动启用 `stream: true`。`ResponsesAPIRequest` 和
 `ResponsesAPISourceEvent` 是转换器内部的供应商类型，不从包入口单独导出。
 
+工具参数增量优先通过上游 `item_id` 定位函数调用；未提供 ID 时按 `output_index` 转换索引。
+DeepSeek 的 `reasoning_text` 内容块会转换为推理正文增量，并累积到 `Reasoning.content.text`。
+不支持的其他内容块会打印并跳过，不会创建拒绝消息或影响工具调用索引。
+
 ### ChatCompletionsConverter
 
 用于兼容 Chat Completions 风格的接口：
@@ -257,7 +261,12 @@ interface Optional {
 ### InputItem
 
 ```ts
-type InputItem = Message | FunctionCall | FunctionCallOutput;
+type InputItem =
+  | Message
+  | FunctionCall
+  | FunctionCallOutput
+  | CustomToolCall
+  | CustomToolCallOutput;
 ```
 
 ### Message
@@ -328,12 +337,37 @@ interface FunctionCallOutput {
 
 `call_id` 用于关联 `FunctionCall`，`output` 是传回模型的字符串结果。
 
+### CustomToolCall
+
+上一轮模型生成的自由格式自定义工具调用：
+
+```ts
+interface CustomToolCall {
+  type: "custom_tool_call";
+  call_id: string;
+  name: string;
+  input: string;
+}
+```
+
+### CustomToolCallOutput
+
+自定义工具执行结果：
+
+```ts
+interface CustomToolCallOutput {
+  type: "custom_tool_call_output";
+  call_id: string;
+  output: string;
+}
+```
+
 ## 工具类型
 
 ### Tool
 
 ```ts
-type Tool = FunctionTool;
+type Tool = FunctionTool | CustomTool;
 ```
 
 ### FunctionTool
@@ -348,6 +382,18 @@ interface FunctionTool {
 ```
 
 `parameters` 使用 JSON Schema 描述函数参数。
+
+### CustomTool
+
+```ts
+interface CustomTool {
+  type: "custom";
+  name: string;
+  description?: string;
+}
+```
+
+自定义工具使用自由格式字符串作为输入。当前仅 Responses API 转换器支持该类型。
 
 示例：
 
@@ -398,7 +444,8 @@ type ResponseStatus =
 type ResponseOutputItem =
   | OutputMessage
   | Reasoning
-  | ResponseFunctionCall;
+  | ResponseFunctionCall
+  | ResponseCustomToolCall;
 ```
 
 ### OutputMessage
@@ -473,6 +520,20 @@ interface ResponseFunctionCall {
 }
 ```
 
+### ResponseCustomToolCall
+
+模型选择执行的自定义工具：
+
+```ts
+interface ResponseCustomToolCall {
+  id: string;
+  type: "custom_tool_call";
+  call_id: string;
+  name: string;
+  input: string;
+}
+```
+
 ## 规范化事件类型
 
 ### ResponseEventType
@@ -493,9 +554,12 @@ type ResponseEventType =
   | "response.incomplete"
   | "response.message_text.delta"
   | "response.message_refusal.delta"
+  | "response.reasoning_text.delta"
   | "response.reasoning_summary_text.delta"
   | "response.function_call.added"
-  | "response.function_call_arguments.delta";
+  | "response.function_call_arguments.delta"
+  | "response.custom_tool_call.added"
+  | "response.custom_tool_call_input.delta";
 ```
 
 ### ResponseEvent
@@ -508,9 +572,12 @@ type ResponseEvent =
   | ResponseIncomplete
   | ResponseMessageTextDelta
   | ResponseMessageRefusalDelta
+  | ResponseReasoningTextDelta
   | ResponseReasoningSummaryTextDelta
   | ResponseFunctionCallAdded
-  | ResponseFunctionCallArgumentsDelta;
+  | ResponseFunctionCallArgumentsDelta
+  | ResponseCustomToolCallAdded
+  | ResponseCustomToolCallInputDelta;
 ```
 
 ### 生命周期事件
@@ -555,6 +622,12 @@ interface ResponseMessageRefusalDelta {
   delta: string;
 }
 
+interface ResponseReasoningTextDelta {
+  type: "response.reasoning_text.delta";
+  index: number;
+  delta: string;
+}
+
 interface ResponseReasoningSummaryTextDelta {
   type: "response.reasoning_summary_text.delta";
   index: number;
@@ -572,6 +645,17 @@ interface ResponseFunctionCallAdded {
 
 interface ResponseFunctionCallArgumentsDelta {
   type: "response.function_call_arguments.delta";
+  delta: string;
+  index: number;
+}
+
+interface ResponseCustomToolCallAdded {
+  type: "response.custom_tool_call.added";
+  custom_tool_call: ResponseCustomToolCall;
+}
+
+interface ResponseCustomToolCallInputDelta {
+  type: "response.custom_tool_call_input.delta";
   delta: string;
   index: number;
 }
@@ -599,8 +683,11 @@ interface ResponseFunctionCallArgumentsDelta {
 - `FileMessage`
 - `FunctionCall`
 - `FunctionCallOutput`
+- `CustomToolCall`
+- `CustomToolCallOutput`
 - `Tool`
 - `FunctionTool`
+- `CustomTool`
 - `Response`
 - `ResponseStatus`
 - `ResponseOutputItem`
@@ -611,6 +698,7 @@ interface ResponseFunctionCallArgumentsDelta {
 - `ReasoningText`
 - `SummaryText`
 - `ResponseFunctionCall`
+- `ResponseCustomToolCall`
 - `ResponseEvent`
 - `ResponseEventType`
 - `ResponseCreated`
@@ -619,6 +707,9 @@ interface ResponseFunctionCallArgumentsDelta {
 - `ResponseIncomplete`
 - `ResponseMessageTextDelta`
 - `ResponseMessageRefusalDelta`
+- `ResponseReasoningTextDelta`
 - `ResponseReasoningSummaryTextDelta`
 - `ResponseFunctionCallAdded`
 - `ResponseFunctionCallArgumentsDelta`
+- `ResponseCustomToolCallAdded`
+- `ResponseCustomToolCallInputDelta`

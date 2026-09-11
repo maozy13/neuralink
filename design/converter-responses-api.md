@@ -101,6 +101,26 @@ SourceEvent 示例：
 }
 ```
 
+**`custom_tool_call`**
+
+如果 `item.type` 是 "custom_tool_call"，则映射到 ResponseCustomToolCallAdded 事件。
+
+SourceEvent 示例：
+
+```json
+{
+    "type": "response.output_item.added",
+    "output_index": 1,
+    "item": {
+        "call_id": "call_5dfhr165xjnmbx6qodwjky21",
+        "name": "exec_python",
+        "type": "custom_tool_call",
+        "id": "ctc_02178442654569800000000000000000000ffffac15e3eeeaaec4"
+    },
+    "sequence_number": 38
+}
+```
+
 ### `response.content_part.added`
 
 SourceEvent 示例：
@@ -118,7 +138,8 @@ SourceEvent 示例：
 ```
 
 - 如果 `part.type` 是 "output_text"，则映射到 ResponseMessageTextDelta 事件。
-- 如果 `part.type` 是 "output_refusal"，则映射到 ResponseMessageRefusalDelta 事件。
+- 如果 `part.type` 是 "reasoning_text"，则映射到 ResponseReasoningTextDelta 事件。
+- 如果 `part.type` 是 "refusal"，则映射到 ResponseMessageRefusalDelta 事件。
 
 ### `response.output_text.delta`
 
@@ -168,6 +189,21 @@ SourceEvent 示例：
 
 映射到 ResponseReasoningSummaryTextDelta 事件。
 
+### `response.reasoning_text.delta`
+
+SourceEvent 示例：
+
+```json
+{
+  "type": "response.reasoning_text.delta",
+  "item_id": "rs_6806bfca0b2481918a5748308061a2600d3ce51bdffd5476",
+  "delta": "用户",
+  "sequence_number": 1
+}
+```
+
+映射到 ResponseReasoningTextDelta 事件。
+
 ### `response.function_call_arguments.delta`
 
 SourceEvent 示例：
@@ -183,6 +219,22 @@ SourceEvent 示例：
 ```
 
 映射到 ResponseFunctionCallArgumentsDelta 事件。
+
+### `response.custom_tool_call_input.delta`
+
+SourceEvent 示例：
+
+```json
+{
+    "type": "response.custom_tool_call_input.delta",
+    "delta": "import ",
+    "item_id": "ctc_02178442654569800000000000000000000ffffac15e3eeeaaec4",
+    "output_index": 1,
+    "sequence_number": 40
+}
+```
+
+映射到 ResponseCustomToolCallInputDelta 事件。
 
 ### `response.completed`
 

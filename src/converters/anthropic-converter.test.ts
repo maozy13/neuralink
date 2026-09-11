@@ -82,6 +82,22 @@ describe("AnthropicConverter", () => {
     },
   );
 
+  it.each(["custom_tool_call", "custom_tool_call_output"] as const)(
+    "rejects unsupported %s input",
+    (type) => {
+      const item = type === "custom_tool_call"
+        ? { type, call_id: "call", name: "apply_patch", input: "patch" }
+        : { type, call_id: "call", output: "done" };
+      expect(() => new AnthropicConverter().toAPI({ model: "claude-test", input: [item] })).toThrow(type);
+    },
+  );
+
+  it("rejects custom tool definitions", () => {
+    expect(() => new AnthropicConverter().toAPI({
+      model: "claude-test", input: "x", tools: [{ type: "custom", name: "apply_patch" }],
+    })).toThrow("custom tools");
+  });
+
   it("maps message_start", () => {
     vi.spyOn(Date, "now").mockReturnValue(1_234_567);
     expect(new AnthropicConverter().fromEvent({

@@ -5,7 +5,10 @@ describe("ResponsesAPIConverter", () => {
   const converter = new ResponsesAPIConverter();
 
   it("enables streaming", () => {
-    const tools = [{ type: "function" as const, name: "weather", description: "Weather", parameters: { type: "object" } }];
+    const tools = [
+      { type: "function" as const, name: "weather", description: "Weather", parameters: { type: "object" } },
+      { type: "custom" as const, name: "apply_patch", description: "Apply a patch" },
+    ];
     const input = [{
       type: "message" as const,
       role: "user" as const,
@@ -48,6 +51,7 @@ describe("ResponsesAPIConverter", () => {
           { id: "msg", type: "message", role: "assistant", content: [{ type: "output_text", text: "Hello" }] },
           { id: "ref", type: "message", role: "assistant", content: [{ type: "refusal", refusal: "No" }] },
           { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "{\"city\":\"北京\"}" },
+          { id: "ctc", type: "custom_tool_call", call_id: "custom", name: "apply_patch", input: "*** Begin Patch" },
         ],
       },
     })).toEqual({
@@ -59,6 +63,7 @@ describe("ResponsesAPIConverter", () => {
           { id: "msg", type: "message", role: "assistant", content: { type: "output_text", text: "Hello" } },
           { id: "ref", type: "message", role: "assistant", content: { type: "refusal", refusal: "No" } },
           { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "{\"city\":\"北京\"}" },
+          { id: "ctc", type: "custom_tool_call", call_id: "custom", name: "apply_patch", input: "*** Begin Patch" },
         ],
       },
     });
@@ -71,11 +76,13 @@ describe("ResponsesAPIConverter", () => {
         { id: "rs", type: "reasoning" },
         { id: "msg", type: "message", role: "assistant", content: [] },
         { id: "fc", type: "function_call", call_id: "call", name: "weather" },
+        { id: "ctc", type: "custom_tool_call", call_id: "custom", name: "apply_patch" },
       ] },
     })).toMatchObject({ response: { output: [
       { content: { type: "reasoning_text", text: "" }, summary: { type: "summary_text", text: "" } },
       { content: { type: "output_text", text: "" } },
       { arguments: "" },
+      { input: "" },
     ] } });
   });
 
@@ -84,12 +91,16 @@ describe("ResponsesAPIConverter", () => {
     [{ type: "response.output_item.added", item: { type: "reasoning" } }, { type: "response.reasoning_summary_text.delta", index: 0, delta: "" }],
     [{ type: "response.output_item.added", item: { id: "fc", type: "function_call", call_id: "call", name: "weather" } }, { type: "response.function_call.added", function_call: { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "" } }],
     [{ type: "response.output_item.added", item: { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "{}" } }, { type: "response.function_call.added", function_call: { id: "fc", type: "function_call", call_id: "call", name: "weather", arguments: "{}" } }],
+    [{ type: "response.output_item.added", item: { id: "ctc", type: "custom_tool_call", call_id: "call", name: "apply_patch" } }, { type: "response.custom_tool_call.added", custom_tool_call: { id: "ctc", type: "custom_tool_call", call_id: "call", name: "apply_patch", input: "" } }],
+    [{ type: "response.output_item.added", item: { id: "ctc", type: "custom_tool_call", call_id: "call", name: "apply_patch", input: "patch" } }, { type: "response.custom_tool_call.added", custom_tool_call: { id: "ctc", type: "custom_tool_call", call_id: "call", name: "apply_patch", input: "patch" } }],
     [{ type: "response.content_part.added", part: { type: "output_text" } }, { type: "response.message_text.delta", index: 0, delta: "" }],
     [{ type: "response.content_part.added", part: { type: "output_refusal" } }, { type: "response.message_refusal.delta", index: 0, delta: "" }],
     [{ type: "response.content_part.added", part: { type: "refusal" } }, { type: "response.message_refusal.delta", index: 0, delta: "" }],
+    [{ type: "response.content_part.added", part: { type: "reasoning_text" } }, { type: "response.reasoning_text.delta", index: 0, delta: "" }],
     [{ type: "response.output_text.delta", delta: "hello" }, { type: "response.message_text.delta", index: 0, delta: "hello" }],
     [{ type: "response.reasoning_summary_part.added", part: { type: "summary_text" } }, { type: "response.reasoning_summary_text.delta", index: 0, delta: "" }],
     [{ type: "response.reasoning_summary_text.delta", delta: "think" }, { type: "response.reasoning_summary_text.delta", index: 0, delta: "think" }],
+    [{ type: "response.reasoning_text.delta", delta: "details" }, { type: "response.reasoning_text.delta", index: 0, delta: "details" }],
   ] as const)("maps delta source event %#", (source, normalized) => {
     expect(converter.fromEvent(source)).toEqual(normalized);
   });
@@ -107,6 +118,31 @@ describe("ResponsesAPIConverter", () => {
     }, response)).toEqual({ type: "response.function_call_arguments.delta", delta: "{\"city\":", index: 0 });
     expect(() => converter.fromEvent({
       type: "response.function_call_arguments.delta", delta: "{}", output_index: 0,
+    })).toThrow("before response.created");
+  });
+
+  it("uses item identity even when normalized and upstream positions differ", () => {
+    const response = { created_at: 1, status: "in_progress" as const, output: [
+      { id: "a", type: "function_call" as const, call_id: "ca", name: "first", arguments: "" },
+      { id: "b", type: "function_call" as const, call_id: "cb", name: "second", arguments: "" },
+    ] };
+    expect(converter.fromEvent({ type: "response.function_call_arguments.delta", item_id: "a", output_index: 2, delta: "{}" }, response)).toMatchObject({ index: 0 });
+    expect(converter.fromEvent({ type: "response.function_call_arguments.delta", item_id: "missing", output_index: 0, delta: "{}" }, response)).toMatchObject({ index: -1 });
+  });
+
+  it("maps custom-tool input indexes by item identity and output position", () => {
+    const response = { created_at: 1, status: "in_progress" as const, output: [
+      { id: "a", type: "custom_tool_call" as const, call_id: "ca", name: "apply_patch", input: "" },
+      { id: "b", type: "custom_tool_call" as const, call_id: "cb", name: "apply_patch", input: "" },
+    ] };
+    expect(converter.fromEvent({
+      type: "response.custom_tool_call_input.delta", item_id: "a", output_index: 2, delta: "A",
+    }, response)).toEqual({ type: "response.custom_tool_call_input.delta", index: 0, delta: "A" });
+    expect(converter.fromEvent({
+      type: "response.custom_tool_call_input.delta", output_index: 1, delta: "B",
+    }, response)).toEqual({ type: "response.custom_tool_call_input.delta", index: 1, delta: "B" });
+    expect(() => converter.fromEvent({
+      type: "response.custom_tool_call_input.delta", output_index: 0, delta: "x",
     })).toThrow("before response.created");
   });
 
@@ -138,10 +174,13 @@ describe("ResponsesAPIConverter", () => {
       output_index: 0,
       item: { type: "web_search_call", id: "ws_1" },
     };
+    const unsupportedPart = { type: "response.content_part.added", part: { type: "audio" } };
     expect(converter.fromEvent(source)).toBeUndefined();
     expect(converter.fromEvent(unsupportedOutput)).toBeUndefined();
+    expect(converter.fromEvent(unsupportedPart)).toBeUndefined();
     expect(log).toHaveBeenCalledWith(source);
     expect(log).toHaveBeenCalledWith(unsupportedOutput);
+    expect(log).toHaveBeenCalledWith(unsupportedPart);
     log.mockRestore();
   });
 

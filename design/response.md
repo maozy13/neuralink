@@ -20,6 +20,7 @@
 - Message
 - Reasoning
 - FunctionCall
+- CustomToolCall
 
 ### `Message`
 
@@ -60,6 +61,20 @@
 | type | "function_call" | 输出项类型，固定为 "function_call" |
 | name | string | 函数名称 |
 | arguments | string | 函数调用参数，JSON 字符串格式 |
+
+### `CustomToolCall`
+
+可执行代码。
+
+**属性：**
+
+| 属性 | 类型 | 说明 |
+| -- | -- | -- |
+| id | string | 输出项 ID |
+| call_id | string | 模型生成的可执行代码的执行 ID |
+| type | "custom_tool_call" | 输出项类型，固定为 "custom_tool_call" |
+| name | string | 模型选择的要执行代码的工具名称 |
+| input | string | 模型生成的可执行代码 |
 
 ### `TextContent`
 
@@ -135,6 +150,10 @@ ResponseEvent.response → Response.response
 
 根据 ResponseEvent.index 定位 RefusalContent，将 ResponseEvent.delta 追加到 RefusalContent 的 `refusal` 文本后。
 
+### ResponseReasoningTextDelta
+
+根据 ResponseEvent.index 定位 ReasoningContent，将 ResponseEvent.delta 追加到 ReasoningContent 的 `text` 文本后。
+
 ### ResponseReasoningSummaryTextDelta
 
 根据 ResponseEvent.index 定位 ReasoningSummary，将 ResponseEvent.delta 追加到 ReasoningSummary 的 `text` 文本后。
@@ -146,3 +165,11 @@ ResponseEvent.function_call → Response.function_call
 ### ResponseFunctionCallArgumentsDelta
 
 根据 ResponseEvent.index 定位 FunctionCall，将 ResponseEvent.delta 追加到 FunctionCall.arguments 文本后。
+
+### ResponseCustomToolCallAdded
+
+ResponseEvent.custom_tool_call → Response.custom_tool_call
+
+### ResponseCustomToolCallInputDelta
+
+根据 ResponseEvent.index 定位 CustomToolCall，将 ResponseEvent.delta 追加到 CustomToolCall.input 文本后。

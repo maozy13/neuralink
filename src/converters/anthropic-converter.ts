@@ -157,6 +157,9 @@ export class AnthropicConverter
         else messages.push({ role: item.role, content });
         continue;
       }
+      if (item.type !== "function_call" && item.type !== "function_call_output") {
+        return this.unsupportedInput(item.type);
+      }
       const role = item.type === "function_call" ? "assistant" : "user";
       const block = item.type === "function_call"
         ? { type: "tool_use" as const, id: item.call_id, name: item.name, input: JSON.parse(item.arguments) as unknown }
@@ -249,6 +252,7 @@ export class AnthropicConverter
    * @returns Anthropic function tool definition.
    */
   private toTool(tool: Tool): AnthropicTool {
+    if (tool.type !== "function") return this.unsupportedTool(tool.type);
     return { name: tool.name, description: tool.description, input_schema: tool.parameters };
   }
 
@@ -259,5 +263,23 @@ export class AnthropicConverter
    */
   private unsupportedContent(type: "input_image" | "input_file"): never {
     throw new Error(`AnthropicConverter does not support ${type}`);
+  }
+
+  /**
+   * Rejects structured input unsupported by the Anthropic converter.
+   * @param type Unsupported normalized input type.
+   * @returns This function never returns.
+   */
+  private unsupportedInput(type: "custom_tool_call" | "custom_tool_call_output"): never {
+    throw new Error(`AnthropicConverter does not support ${type}`);
+  }
+
+  /**
+   * Rejects tool definitions unsupported by the Anthropic converter.
+   * @param type Unsupported normalized tool type.
+   * @returns This function never returns.
+   */
+  private unsupportedTool(type: "custom"): never {
+    throw new Error(`AnthropicConverter does not support ${type} tools`);
   }
 }

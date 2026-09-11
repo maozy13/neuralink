@@ -10,7 +10,7 @@ NeuralLink 是一个面向多种大模型服务的 TypeScript 流式客户端。
 | Chat Completions | `ChatCompletionsConverter` |
 | Anthropic Messages | `AnthropicConverter` |
 
-统一后的响应支持文本、拒答、推理摘要和函数调用，应用层无需分别处理不同供应商的事件格式。
+统一后的响应支持文本、拒答、推理正文、推理摘要、函数调用和自定义工具调用，应用层无需分别处理不同供应商的事件格式。
 
 ## 安装
 
@@ -103,7 +103,7 @@ connector.call(model, input, optional);
 | `model` | `string` | 服务端模型标识 |
 | `input` | `string \| InputItem[]` | 简单文本或结构化上下文 |
 | `optional.instructions` | `string` | 系统级指令 |
-| `optional.tools` | `Tool[]` | 可供模型调用的函数工具 |
+| `optional.tools` | `Tool[]` | 可供模型调用的函数工具或自定义工具 |
 
 结构化输入示例：
 
@@ -184,6 +184,10 @@ const finalResponse = await consume(
 );
 ```
 
+Responses API 也支持自由格式的自定义工具。模型生成的输入通过
+`response.custom_tool_call_input.delta` 累积到 `ResponseCustomToolCall.input`，执行结果使用
+`custom_tool_call_output` 和对应的 `call_id` 回传。Chat Completions 与 Anthropic 转换器不支持该工具类型。
+
 完整的并行工具调用示例位于：
 
 - [`demo/responses-api-demo.ts`](demo/responses-api-demo.ts)
@@ -199,9 +203,12 @@ const finalResponse = await consume(
 | `response.created` | 响应已创建 |
 | `response.message_text.delta` | 文本增量 |
 | `response.message_refusal.delta` | 拒答内容增量 |
+| `response.reasoning_text.delta` | 推理正文增量 |
 | `response.reasoning_summary_text.delta` | 推理摘要增量 |
 | `response.function_call.added` | 新增函数调用 |
 | `response.function_call_arguments.delta` | 函数参数增量 |
+| `response.custom_tool_call.added` | 新增自定义工具调用 |
+| `response.custom_tool_call_input.delta` | 自定义工具输入增量 |
 | `response.completed` | 响应完成 |
 | `response.failed` | 响应失败 |
 | `response.incomplete` | 响应未完整结束 |
